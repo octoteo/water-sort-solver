@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { applyMove, type Cup, type Move, solveWithLockedCups } from "../lib/solver";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyMove, type Cup, type Move, type SearchMode, type UnlockSolveResult } from "../lib/solver";
 import { recognizeScreenshot, type RecognitionResult, type RasterImage } from "../lib/recognizer";
 
 const CAPACITY = 4;
@@ -9,17 +9,21 @@ const DEFAULT_PALETTE = ["#7c3aed", "#2563eb", "#f43f5e", "#f59e0b", "#22c55e", 
 const SAMPLE: Cup[] = [[0,1,0,1],[1,0,1,0],[],[]];
 
 type CupHighlight = "source" | "target" | undefined;
+type TiltDirection = "left" | "right" | undefined;
+type PourGeometry = { width: number; height: number; x1: number; y1: number; x2: number; y2: number; controlX: number; controlY: number };
+type WorkerReply = { id: number; result: UnlockSolveResult };
 
 function colorFor(palette: string[], color: number) {
   return palette[color] ?? DEFAULT_PALETTE[color % DEFAULT_PALETTE.length];
 }
 
-function CupView({ cup, index, locked, unlockRequired, selectedColor, palette, highlight, editing, onCell, onToggleLock }: { cup: Cup; index: number; locked: boolean; unlockRequired: boolean; selectedColor: number; palette: string[]; highlight?: CupHighlight; editing: boolean; onCell: (level: number) => void; onToggleLock: () => void; }) {
+function CupView({ cup, index, locked, unlockRequired, suspicious, selectedColor, palette, highlight, tiltDirection, editing, onCell, onToggleLock }: { cup: Cup; index: number; locked: boolean; unlockRequired: boolean; suspicious: boolean; selectedColor: number; palette: string[]; highlight?: CupHighlight; tiltDirection?: TiltDirection; editing: boolean; onCell: (level: number) => void; onToggleLock: () => void; }) {
   const display = Array.from({ length: CAPACITY }, (_, i) => cup[CAPACITY - 1 - i]);
   const label = highlight === "source" ? "① 源杯" : highlight === "target" ? "② 目标" : null;
   return (
-    <div className={`cup-wrap ${locked ? "locked" : ""} ${unlockRequired ? "unlock-required" : ""} ${highlight ? `is-${highlight}` : ""}`}>
+    <div data-cup-index={index} className={`cup-wrap ${locked ? "locked" : ""} ${unlockRequired ? "unlock-required" : ""} ${suspicious ? "suspicious" : ""} ${highlight ? `is-${highlight}` : ""} ${tiltDirection ? `tilt-${tiltDirection}` : ""}`}>
       {label && <span className={`move-badge ${highlight}`}>{label}</span>}
+      {suspicious && editing && <span className="suspect-badge" title="识别器建议检查这个杯子">!</span>}
       <button className="lock-btn" onClick={onToggleLock} title="切换广告锁定杯" disabled={!editing}>{unlockRequired ? "🔓" : locked ? "🔒" : "○"}</button>
       <div className="cup" aria-label={`杯子 ${index + 1}`}>
         {display.map((color, visualLevel) => {
@@ -40,14 +44,14 @@ function ScreenshotPreview({ url, result }: { url: string; result: RecognitionRe
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={url} alt="待识别的游戏截图" />
         <div className="screenshot-overlay" aria-hidden="true">
-          {result.detections.map((detection, index) => <div key={index} className={`detected-cup ${detection.type}`} style={{ left: `${detection.box.x * 100}%`, top: `${detection.box.y * 100}%`, width: `${detection.box.width * 100}%`, height: `${detection.box.height * 100}%` }}><span>{index + 1}{detection.type === "locked" ? " 🔒" : detection.type === "empty" ? " ·" : ""}</span></div>)}
+          {result.detections.map((detection, index) => <div key={index} className={`detected-cup ${detection.type} ${result.suspiciousCups.includes(index) ? "suspect" : ""} ${detection.selected ? "selected-cup" : ""}`} style={{ left: `${detection.box.x * 100}%`, top: `${detection.box.y * 100}%`, width: `${detection.box.width * 100}%`, height: `${detection.box.height * 100}%` }}><span>{index + 1}{detection.type === "locked" ? " 🔒" : detection.type === "empty" ? " ·" : detection.selected ? " ✓" : ""}</span></div>)}
         </div>
       </div>
       <div className="recognition-summary">
         <div className="confidence"><span>识别置信度</span><strong>{Math.round(result.confidence * 100)}%</strong></div>
-        <div className="recognition-stats"><span>{result.detections.length} 个杯子</span><span>{result.locked.length} 个广告杯</span><span>{result.palette.length} 种颜色</span></div>
-        <p>框的位置和编号应与原图一致。识别后仍可在下方逐层修正颜色、空层和广告杯。</p>
-        {result.warnings.length > 0 && <div className="recognition-warning"><strong>需要检查</strong>{result.warnings.map((warning) => <span key={warning}>• {warning}</span>)}</div>}
+        <div className="recognition-stats"><span>{result.detections.length} 个杯子</span><span>{result.locked.length} 个广告杯</span><span>{result.palette.length} 种颜色</span><span>{result.suspiciousCups.length} 个待核对杯</span></div>
+        <p>红色虚线杯是识别器建议优先核对的位置。黄色选中描边会自动避开采样，不需要先在游戏里取消选中。</p>
+        {result.issues.length > 0 && <div className="recognition-issues"><strong>自动诊断</strong>{result.issues.slice(0, 8).map((issue, index) => <span key={`${issue.code}-${issue.cupIndex ?? "x"}-${issue.level ?? "x"}-${index}`} className={`issue-${issue.severity}`}>• {issue.message}</span>)}{result.issues.length > 8 && <span>• 另有 {result.issues.length - 8} 项，优先检查红色虚线杯即可。</span>}</div>}
       </div>
     </div>
   );
@@ -90,7 +94,7 @@ export default function Home() {
   const [solutionUnlocked, setSolutionUnlocked] = useState<number[]>([]);
   const [palette, setPalette] = useState<string[]>(DEFAULT_PALETTE);
   const [selectedColor, setSelectedColor] = useState(0);
-  const [mode, setMode] = useState<"fast" | "shortest">("fast");
+  const [mode, setMode] = useState<SearchMode>("fast");
   const [moves, setMoves] = useState<Move[]>([]);
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -100,14 +104,29 @@ export default function Home() {
   const [recognition, setRecognition] = useState<RecognitionResult | null>(null);
   const [recognizing, setRecognizing] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [solving, setSolving] = useState(false);
+  const [pourGeometry, setPourGeometry] = useState<PourGeometry | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const workerRequestRef = useRef(0);
+  const boardRef = useRef<HTMLDivElement | null>(null);
+
+  const stopWorker = useCallback(() => {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    setSolving(false);
+  }, []);
 
   const resetSolution = useCallback(() => {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    setSolving(false);
     setMoves([]);
     setStep(0);
     setPlaying(false);
     setSolutionUnlocked([]);
   }, []);
 
+  useEffect(() => () => workerRef.current?.terminate(), []);
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   const processImage = useCallback(async (file: File) => {
@@ -128,14 +147,15 @@ export default function Home() {
         return;
       }
       resetSolution();
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(objectUrl);
       setRecognition(result);
       setCups(result.cups);
       setLocked(result.locked);
       setPalette(result.palette.length ? result.palette : DEFAULT_PALETTE);
       setSelectedColor(0);
-      const warning = result.warnings.length ? `；有 ${result.warnings.length} 项需要人工检查` : "；颜色数量校验通过";
-      setMessage(`已识别 ${result.cups.length} 个杯子、${result.locked.length} 个广告杯，置信度 ${Math.round(result.confidence * 100)}%${warning}。确认下方杯面后即可求解。`);
+      const review = result.suspiciousCups.length ? `；建议核对杯 ${result.suspiciousCups.map((index) => index + 1).join("、")}` : "；完整性检查通过";
+      setMessage(`已识别 ${result.cups.length} 个杯子、${result.locked.length} 个广告杯、${result.palette.length} 种颜色，置信度 ${Math.round(result.confidence * 100)}%${review}。`);
     } catch (error) {
       URL.revokeObjectURL(objectUrl);
       setMessage(error instanceof Error ? `识别失败：${error.message}` : "截图识别失败");
@@ -143,7 +163,7 @@ export default function Home() {
       setRecognizing(false);
       setDragging(false);
     }
-  }, [resetSolution]);
+  }, [previewUrl, resetSolution]);
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
@@ -191,6 +211,30 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [playing, step, moves.length, speed]);
 
+  useEffect(() => {
+    if (!currentMove || !boardRef.current) { setPourGeometry(null); return; }
+    let frame = 0;
+    const measure = () => {
+      const board = boardRef.current;
+      if (!board) return;
+      const source = board.querySelector<HTMLElement>(`[data-cup-index="${currentMove.from}"] .cup`);
+      const target = board.querySelector<HTMLElement>(`[data-cup-index="${currentMove.to}"] .cup`);
+      if (!source || !target) return;
+      const boardRect = board.getBoundingClientRect();
+      const sourceRect = source.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const x1 = sourceRect.left - boardRect.left + sourceRect.width / 2;
+      const y1 = sourceRect.top - boardRect.top + 6;
+      const x2 = targetRect.left - boardRect.left + targetRect.width / 2;
+      const y2 = targetRect.top - boardRect.top + 10;
+      const lift = Math.max(34, Math.min(110, Math.abs(x2 - x1) * 0.22 + Math.abs(y2 - y1) * 0.08));
+      setPourGeometry({ width: boardRect.width, height: boardRect.height, x1, y1, x2, y2, controlX: (x1 + x2) / 2, controlY: Math.min(y1, y2) - lift });
+    };
+    frame = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", measure); };
+  }, [currentMove, preview, recognizedRows]);
+
   const editLayer = (cupIndex: number, level: number) => {
     resetSolution();
     setCups((old) => old.map((cup, i) => {
@@ -214,14 +258,16 @@ export default function Home() {
     setPalette(DEFAULT_PALETTE);
     setSelectedColor(0);
     setRecognition(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     resetSolution();
     setMessage("已创建 14 个空杯。选择颜色后从杯底开始填写；“空”可清除当前层及其上方。");
   };
 
-  const doSolve = () => {
-    setPlaying(false);
-    const result = solveWithLockedCups(cups, locked, { capacity: CAPACITY, mode, maxUnlocks: locked.length, timeoutMs: mode === "fast" ? 3500 : 10000 });
+  const handleSolveResult = (result: UnlockSolveResult) => {
+    setSolving(false);
+    workerRef.current?.terminate();
+    workerRef.current = null;
     if (result.status === "solved") {
       setMoves(result.moves);
       setStep(0);
@@ -229,9 +275,42 @@ export default function Home() {
       const unlockText = result.unlocked.length ? `；需解锁杯 ${result.unlocked.map((i) => i + 1).join(", ")}` : "；无需广告杯";
       setMessage(`找到 ${result.moves.length} 步解法${unlockText}。搜索 ${result.explored.toLocaleString()} 个状态，耗时 ${result.elapsedMs.toFixed(0)} ms。`);
     } else {
-      resetSolution();
+      setMoves([]);
+      setStep(0);
+      setSolutionUnlocked([]);
       setMessage(result.reason);
     }
+  };
+
+  const doSolve = () => {
+    setPlaying(false);
+    stopWorker();
+    if (typeof Worker === "undefined") {
+      setMessage("当前浏览器不支持 Web Worker。请使用最新版 Chrome / Edge / Safari。");
+      return;
+    }
+    const id = ++workerRequestRef.current;
+    setSolving(true);
+    setMessage("正在后台线程求解……页面仍可正常滚动和操作；困难关卡可以随时取消。");
+    const worker = new Worker(new URL("../lib/solver.worker.ts", import.meta.url));
+    workerRef.current = worker;
+    worker.onmessage = (event: MessageEvent<WorkerReply>) => {
+      if (event.data.id !== workerRequestRef.current) return;
+      handleSolveResult(event.data.result);
+    };
+    worker.onerror = () => {
+      worker.terminate();
+      workerRef.current = null;
+      setSolving(false);
+      setMessage("后台求解线程启动失败，请刷新页面后重试。");
+    };
+    worker.postMessage({ id, cups, locked, mode });
+  };
+
+  const cancelSolve = () => {
+    workerRequestRef.current++;
+    stopWorker();
+    setMessage("已取消本次求解，关卡状态没有变化。");
   };
 
   const jumpToStep = (value: number) => {
@@ -239,22 +318,27 @@ export default function Home() {
     setStep(Math.max(0, Math.min(moves.length, value)));
   };
 
-  const renderCup = (cup: Cup, i: number) => <CupView key={i} cup={cup} index={i} locked={locked.includes(i) && !solutionUnlocked.includes(i)} unlockRequired={solutionUnlocked.includes(i)} selectedColor={selectedColor} palette={palette} editing={!moves.length} highlight={currentMove?.from === i ? "source" : currentMove?.to === i ? "target" : undefined} onCell={(level) => editLayer(i, level)} onToggleLock={() => { resetSolution(); setLocked((old) => old.includes(i) ? old.filter((v) => v !== i) : [...old, i]); }} />;
+  const sourceTilt: TiltDirection = currentMove && pourGeometry ? (pourGeometry.x2 < pourGeometry.x1 ? "left" : "right") : undefined;
+  const renderCup = (cup: Cup, i: number) => <CupView key={i} cup={cup} index={i} locked={locked.includes(i) && !solutionUnlocked.includes(i)} unlockRequired={solutionUnlocked.includes(i)} suspicious={Boolean(recognition?.suspiciousCups.includes(i))} selectedColor={selectedColor} palette={palette} editing={!moves.length && !solving} highlight={currentMove?.from === i ? "source" : currentMove?.to === i ? "target" : undefined} tiltDirection={currentMove?.from === i ? sourceTilt : undefined} onCell={(level) => editLayer(i, level)} onToggleLock={() => { resetSolution(); setLocked((old) => old.includes(i) ? old.filter((v) => v !== i) : [...old, i]); }} />;
 
   return (
     <main>
-      <header className="hero"><div><p className="eyebrow">WATER SORT SOLVER</p><h1>颜色分杯通用求解器</h1><p className="subtitle">截图自动识别 · 本地运行 · 优先不看广告 · 可视化逐步执行</p></div><div className="status">v0.2</div></header>
-      <section className="panel upload-panel"><div><h2>截图识别</h2><p>针对当前游戏皮肤的本地 CV 识别，不调用多模态模型，也不会把截图上传到服务器。支持拖入、选择文件或直接 Ctrl+V 粘贴截图。</p></div><label className={`upload-zone ${dragging ? "dragging" : ""} ${recognizing ? "busy" : ""}`} onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file) void processImage(file); }}><span>{recognizing ? "正在识别…" : "📷 上传 / 拖入截图"}</span><small>也可以直接粘贴截图</small><input type="file" accept="image/*" disabled={recognizing} onChange={(e) => { const file = e.target.files?.[0]; if (file) void processImage(file); e.currentTarget.value = ""; }} /></label></section>
-      {previewUrl && recognition && <section className="panel recognition-panel"><div className="section-head"><div><h2>识别结果</h2><p>自动框选和编号仅用于校验；真正进入 Solver 的状态显示在下方杯子编辑器。</p></div></div><ScreenshotPreview url={previewUrl} result={recognition} /></section>}
+      <header className="hero"><div><p className="eyebrow">WATER SORT SOLVER</p><h1>颜色分杯通用求解器</h1><p className="subtitle">真实截图回归 · 错误自动定位 · Web Worker 求解 · 动态倾倒指引</p></div><div className="status">v0.3</div></header>
+      <section className="panel upload-panel"><div><h2>截图识别</h2><p>针对当前淘特游戏皮肤的本地 CV 识别，不调用多模态模型，也不会把截图上传到服务器。支持拖入、选择文件或直接 Ctrl+V 粘贴。</p></div><label className={`upload-zone ${dragging ? "dragging" : ""} ${recognizing ? "busy" : ""}`} onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file) void processImage(file); }}><span>{recognizing ? "正在识别…" : "📷 上传 / 拖入截图"}</span><small>也可以直接粘贴截图</small><input type="file" accept="image/*" disabled={recognizing} onChange={(e) => { const file = e.target.files?.[0]; if (file) void processImage(file); e.currentTarget.value = ""; }} /></label></section>
+      {previewUrl && recognition && <section className="panel recognition-panel"><div className="section-head"><div><h2>识别结果与自动诊断</h2><p>识别器会利用杯子网格、4 层规则和全局颜色计数定位可疑位置；红色虚线杯建议人工核对。</p></div></div><ScreenshotPreview url={previewUrl} result={recognition} /></section>}
       <section className="panel">
-        <div className="section-head"><div><h2>{moves.length ? "可视化执行区" : "关卡编辑器"}</h2><p>{moves.length ? "按高亮提示操作：先点“源杯”，再点“目标杯”。每完成一次实际游戏操作，就点“已完成这一步”。" : recognition ? "已从截图生成关卡。请重点检查颜色、空层和 🔒 广告杯；发现错误可直接点击修正。" : "数组方向为杯底 → 杯顶。点颜色，再点击杯中对应层。锁图标表示“看广告解锁”的灰杯。"}</p></div><div className="toolbar"><button onClick={clear}>新建关卡</button><button onClick={addCup} disabled={moves.length > 0}>+ 杯子</button></div></div>
+        <div className="section-head"><div><h2>{moves.length ? "可视化执行区" : "关卡编辑器"}</h2><p>{moves.length ? "按高亮提示操作：源杯会倾斜，流动虚线指向目标杯。完成游戏中的一次倾倒后，再点“已完成这一步”。" : recognition ? "已从截图生成关卡。优先检查带 ! 的杯子；颜色、空层和 🔒 广告杯都可以直接修正。" : "点颜色，再点击杯中对应层。锁图标表示“看广告解锁”的灰杯。"}</p></div><div className="toolbar"><button onClick={clear}>新建关卡</button><button onClick={addCup} disabled={moves.length > 0 || solving}>+ 杯子</button></div></div>
         {!moves.length && <div className="palette" aria-label="颜色选择"><button className={`eraser ${selectedColor === -1 ? "selected" : ""}`} onClick={() => setSelectedColor(-1)} title="清除该层及其上方">空</button>{palette.map((color, i) => <button key={`${color}-${i}`} className={selectedColor === i ? "selected" : ""} style={{ background: color }} onClick={() => setSelectedColor(i)} title={`颜色 ${i + 1}`} />)}</div>}
         {moves.length > 0 && currentMove && <div className="inline-instruction"><span className="instruction-kicker">现在执行第 {step + 1} 步</span><strong><em>①</em> 点击 {currentMove.from + 1} 号杯 <b>→</b> <em>②</em> 点击 {currentMove.to + 1} 号杯</strong><span className="pour-detail"><i style={{ background: colorFor(palette, currentMove.color) }} />{currentMove.amount > 1 ? `会自动连续倒出 ${currentMove.amount} 层同色液体` : "倒出顶部 1 层液体"}</span></div>}
         {moves.length > 0 && !currentMove && <div className="inline-instruction complete-instruction"><span className="instruction-kicker">全部完成</span><strong>✓ 当前杯面应与最终状态一致</strong><span className="pour-detail">如果游戏画面一致，这一关已经解开。</span></div>}
-        {recognizedRows ? <div className={`recognized-board ${moves.length ? "guide-mode" : ""}`}>{recognizedRows.map((indexes, row) => <div className="recognized-row" key={row}>{indexes.map((index) => renderCup(preview[index], index))}</div>)}</div> : <div className={`cups-grid ${moves.length ? "guide-mode" : ""}`}>{preview.map(renderCup)}</div>}
+        <div className="board-shell" ref={boardRef}>
+          {pourGeometry && currentMove && <svg className="pour-overlay" viewBox={`0 0 ${pourGeometry.width} ${pourGeometry.height}`} preserveAspectRatio="none" aria-hidden="true"><path className="pour-stream-glow" d={`M ${pourGeometry.x1} ${pourGeometry.y1} Q ${pourGeometry.controlX} ${pourGeometry.controlY} ${pourGeometry.x2} ${pourGeometry.y2}`} /><path className="pour-stream" style={{ stroke: colorFor(palette, currentMove.color) }} d={`M ${pourGeometry.x1} ${pourGeometry.y1} Q ${pourGeometry.controlX} ${pourGeometry.controlY} ${pourGeometry.x2} ${pourGeometry.y2}`} /></svg>}
+          {recognizedRows ? <div className={`recognized-board ${moves.length ? "guide-mode" : ""}`}>{recognizedRows.map((indexes, row) => <div className="recognized-row" key={row}>{indexes.map((index) => renderCup(preview[index], index))}</div>)}</div> : <div className={`cups-grid ${moves.length ? "guide-mode" : ""}`}>{preview.map(renderCup)}</div>}
+        </div>
       </section>
       <section className="panel solve-panel">
-        <div className="solve-controls"><label>求解目标<select value={mode} onChange={(e) => setMode(e.target.value as "fast" | "shortest")} disabled={moves.length > 0}><option value="fast">快速找到可行解</option><option value="shortest">尽量少步骤（A*）</option></select></label><button className="primary" onClick={doSolve}>{moves.length ? "重新求解" : "开始求解"}</button></div>
+        <div className="solve-controls"><label>求解目标<select value={mode} onChange={(e) => setMode(e.target.value as SearchMode)} disabled={moves.length > 0 || solving}><option value="fast">快速找到可行解</option><option value="shortest">尽量少步骤（A*）</option></select></label>{solving ? <button className="cancel-solve" onClick={cancelSolve}>取消求解</button> : <button className="primary" onClick={doSolve}>{moves.length ? "重新求解" : "开始求解"}</button>}</div>
+        {solving && <div className="solving-indicator"><span className="solver-spinner" /><div><strong>后台线程正在搜索</strong><small>UI 不会被搜索阻塞，可以继续滚动、查看截图或取消。</small></div></div>}
         <p className="message">{message}</p>
         {moves.length > 0 && <div className="solution">
           <div className="visual-guide">
