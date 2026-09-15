@@ -96,9 +96,12 @@ function colorCount(cups: Cup[]) {
 export function validatePuzzle(cups: Cup[], capacity = 4) {
   if (!cups.length) return { ok: false as const, reason: "没有杯子" };
   if (cups.some((cup) => cup.length > capacity)) return { ok: false as const, reason: `存在超过容量 ${capacity} 的杯子` };
+  if (cups.some((cup) => cup.some((color) => !Number.isInteger(color) || color < 0))) {
+    return { ok: false as const, reason: "存在未填写的中间空层，请先修正杯子内容" };
+  }
   const counts = colorCount(cups);
   for (const [color, count] of counts) {
-    if (count !== capacity) return { ok: false as const, reason: `颜色 ${color + 1} 出现 ${count} 次，应为 ${capacity} 次` };
+    if (count % capacity !== 0) return { ok: false as const, reason: `颜色 ${color + 1} 共 ${count} 层，必须是 ${capacity} 的整数倍` };
   }
   return { ok: true as const };
 }
@@ -110,14 +113,18 @@ function runCount(cup: Cup) {
   return runs;
 }
 
-function admissibleHeuristic(cups: Cup[]) {
+function targetCupCount(cups: Cup[], capacity: number) {
+  const layers = cups.reduce((sum, cup) => sum + cup.length, 0);
+  return layers / capacity;
+}
+
+function admissibleHeuristic(cups: Cup[], capacity: number) {
   const runs = cups.reduce((sum, cup) => sum + runCount(cup), 0);
-  const colors = colorCount(cups).size;
-  return Math.max(0, runs - colors);
+  return Math.max(0, runs - targetCupCount(cups, capacity));
 }
 
 function fastHeuristic(cups: Cup[], capacity: number) {
-  let score = admissibleHeuristic(cups) * 3;
+  let score = admissibleHeuristic(cups, capacity) * 3;
   for (const cup of cups) {
     if (!cup.length) continue;
     if (cup.length === capacity && isMonochrome(cup)) score -= 2;
@@ -163,7 +170,7 @@ export function solve(cupsInput: Cup[], options: SolveOptions = {}): SolveResult
   if (!validity.ok) return { status: "unsolved", moves: [], explored: 0, elapsedMs: 0, reason: validity.reason };
   if (isSolved(cups, capacity)) return { status: "solved", moves: [], explored: 0, elapsedMs: 0 };
   const queue = new MinHeap<Node>();
-  const h0 = mode === "shortest" ? admissibleHeuristic(cups) : fastHeuristic(cups, capacity);
+  const h0 = mode === "shortest" ? admissibleHeuristic(cups, capacity) : fastHeuristic(cups, capacity);
   queue.push({ cups, moves: [], g: 0, f: h0 }, h0);
   const best = new Map<string, number>([[canonicalKey(cups), 0]]);
   let explored = 0;
@@ -180,7 +187,7 @@ export function solve(cupsInput: Cup[], options: SolveOptions = {}): SolveResult
       const known = best.get(key);
       if (known !== undefined && known <= g) continue;
       best.set(key, g);
-      const h = mode === "shortest" ? admissibleHeuristic(next.cups) : fastHeuristic(next.cups, capacity);
+      const h = mode === "shortest" ? admissibleHeuristic(next.cups, capacity) : fastHeuristic(next.cups, capacity);
       const f = mode === "shortest" ? g + h : g * 0.18 + h;
       const moves = [...node.moves, next.move];
       if (isSolved(next.cups, capacity)) return { status: "solved", moves, explored, elapsedMs: performance.now() - started };
