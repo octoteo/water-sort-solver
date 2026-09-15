@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyMove, isSolved, solve, solveWithLockedCups, type Cup } from "../lib/solver";
+import { applyMove, isSolved, solve, solveWithLockedCups, validatePuzzle, type Cup } from "../lib/solver";
 
 function replay(start: Cup[], moves: { from: number; to: number }[]) {
   let state = start.map((cup) => cup.slice());
@@ -26,5 +26,14 @@ describe("solver", () => {
     expect(result.status).toBe("solved");
     expect(result.unlocked).toEqual([]);
     expect(result.moves.every((m) => m.from !== 4 && m.to !== 4)).toBe(true);
+  });
+
+  it("accepts the same color filling more than one completed cup", () => {
+    const puzzle: Cup[] = [[0,1,0,1],[1,0,1,0],[0,0,0,0],[],[]];
+    expect(validatePuzzle(puzzle)).toEqual({ ok: true });
+    const result = solve(puzzle, { mode: "fast", timeoutMs: 5000 });
+    expect(result.status).toBe("solved");
+    if (result.status !== "solved") return;
+    expect(isSolved(replay(puzzle, result.moves))).toBe(true);
   });
 });
