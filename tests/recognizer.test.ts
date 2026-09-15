@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { recognizeScreenshot } from "../lib/recognizer";
 
 function loadFixture() {
-  const bytes = readFileSync(new URL("./fixtures/selected-android.jpg", import.meta.url));
+  const base64 = readFileSync(new URL("./fixtures/selected-android.b64", import.meta.url), "utf8").replace(/\s/g, "");
+  const bytes = Buffer.from(base64, "base64");
   const decoded = decode(bytes, { useTArray: true });
   return {
     width: decoded.width,
