@@ -1,0 +1,31 @@
+import { solveWithLockedCups, type Cup, type SearchMode, type UnlockSolveResult } from "./solver";
+
+type SolveWorkerRequest = {
+  id: number;
+  cups: Cup[];
+  locked: number[];
+  mode: SearchMode;
+};
+
+type SolveWorkerResponse = {
+  id: number;
+  result: UnlockSolveResult;
+};
+
+type WorkerScope = {
+  onmessage: ((event: MessageEvent<SolveWorkerRequest>) => void) | null;
+  postMessage: (message: SolveWorkerResponse) => void;
+};
+
+const scope = self as unknown as WorkerScope;
+
+scope.onmessage = (event) => {
+  const { id, cups, locked, mode } = event.data;
+  const result = solveWithLockedCups(cups, locked, {
+    capacity: 4,
+    mode,
+    maxUnlocks: locked.length,
+    timeoutMs: mode === "fast" ? 5000 : 15000,
+  });
+  scope.postMessage({ id, result });
+};
