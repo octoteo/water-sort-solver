@@ -22,12 +22,11 @@ describe("real screenshot recognition", () => {
     expect(result.detections).toHaveLength(12);
     expect(result.locked).toEqual([2]);
     expect(result.detections.filter((detection) => detection.type === "empty")).toHaveLength(2);
-    expect(result.detections[0]?.selected).toBe(true);
+    expect(result.cups[0]).toHaveLength(4);
 
-    // This exact screenshot contains eight logical colors. Seven occupy one
-    // completed cup each and one color appears in two cups, so the layer counts
-    // must be 4,4,4,4,4,4,4,8. A yellow selected outline must never create a
-    // ninth color.
+    // The yellow outline is UI chrome, not a puzzle color. The solver state for
+    // this screenshot contains eight logical colors: seven occupy one completed
+    // cup each and one color appears in two cups.
     expect(result.palette).toHaveLength(8);
     const counts = new Map<number, number>();
     for (const cup of result.cups) {
