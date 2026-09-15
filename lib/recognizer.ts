@@ -37,7 +37,10 @@ type RawDetection = {
 type ColorSample = { rgb: RGB; cupIndex: number };
 
 const CAPACITY = 4;
-const BODY_PROBES = [0.35, 0.55, 0.75, 0.91];
+// The bottom probe intentionally stays above the rounded tip of the glass.
+// Selected cups have a yellow outline around that tip; probing too low can
+// mistake the outline/highlight for the bottom liquid layer.
+const BODY_PROBES = [0.35, 0.55, 0.75, 0.86];
 const X_PROBES = [0.30, 0.36, 0.42, 0.50, 0.58, 0.64, 0.70];
 
 function clamp(value: number, min: number, max: number) {
@@ -153,7 +156,11 @@ function detectBoxes(image: RasterImage, foreground: Uint8Array) {
   }
   const yThreshold = Math.max(5, Math.floor(image.width * 0.06));
   const yActive = yCounts.map((count) => count > yThreshold);
-  const yRuns = mergeRuns(getRuns(yActive, 8), Math.max(5, Math.floor(image.height * 0.025)))
+  // Keep nearby fragments of the same glass row together, but do not merge
+  // the decorative reward-cup row above the puzzle with the first puzzle row.
+  // On tall Android screenshots the old 2.5% gap could exceed 50 px and merge
+  // those two visually separate regions into one giant detection row.
+  const yRuns = mergeRuns(getRuns(yActive, 8), Math.max(4, Math.floor(image.height * 0.012)))
     .filter(([y0, y1]) => y1 - y0 + 1 > image.height * 0.11 && y1 - y0 + 1 < image.height * 0.26);
 
   const boxes: Box[] = [];
