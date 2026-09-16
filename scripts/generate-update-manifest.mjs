@@ -27,7 +27,7 @@ const manifest = {
     { name: "GitHub 全球备用", url: githubApkUrl },
   ],
   sha256,
-  notes: `v${versionName}：修复 MIUI/小米安装器更新失败。APK 下载与 SHA-256 校验完成后改用 Android PackageInstaller.Session 写入和提交安装包，不再让 OEM 安装器读取应用 FileProvider；连续分屏求解与识别完整性安全门继续保留。`,
+  notes: `v${versionName}：MIUI 真机自动更新验证版本。继续使用 Android PackageInstaller.Session 安装链路，不再通过 FileProvider 交付 APK；用于验证上一版本可直接在应用内下载并覆盖更新。`,
 };
 
 await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);

@@ -1,11 +1,11 @@
 {
-  "versionCode": 13,
-  "versionName": "0.9.2",
-  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.2/Water-Sort-Solver.apk",
+  "versionCode": 14,
+  "versionName": "0.9.3",
+  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.3/Water-Sort-Solver.apk",
   "apkSources": [
     {
       "name": "Gitee 中国镜像",
-      "url": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.2/Water-Sort-Solver.apk"
+      "url": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.3/Water-Sort-Solver.apk"
     },
     {
       "name": "GitHub 全球备用",
@@ -13,5 +13,5 @@
     }
   ],
   "sha256": "",
-  "notes": "v0.9.2：修复 MIUI/小米安装器更新失败。下载完成后不再把 FileProvider URI 交给 OEM 安装器，而是通过 Android PackageInstaller.Session 写入并提交 APK，由系统安装服务弹出用户确认，避免 Permission Denial: FileProvider not exported。"
+  "notes": "v0.9.3：MIUI 真机自动更新验证版本。继续使用 Android PackageInstaller.Session 安装链路，不再通过 FileProvider 交付 APK；此版本主要用于验证 v0.9.2 → v0.9.3 应用内覆盖更新。"
 }
