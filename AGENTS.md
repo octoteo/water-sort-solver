@@ -16,20 +16,26 @@
 12. Shared screenshots are temporary local artifacts. Keep the expiry bounded (currently 30 minutes) and preserve an explicit delete path.
 13. The share fast path may auto-recognize and auto-solve, but suspicious recognition must stay visible and the user must be able to open the full editable workflow with the same short-lived screenshot.
 14. PWA/offline features must remain progressive enhancement: ordinary upload/paste + solve must continue to work in browsers that do not support installation or Web Share Target.
+15. Continuous-play controls must always expose a mistake rollback. A large “next step” action must never remove the ability to move back one solver step.
+16. Screen Wake Lock and haptics are optional progressive enhancements. Failure or lack of platform support must never block recognition, solving, or step execution.
+17. Persistent screenshot history is opt-in and local-only. It must stay disabled by default, use browser storage only, have bounded count/age retention, and keep per-item plus clear-all deletion paths.
+18. Persisted execution progress and 淘特 skin preferences may use localStorage, but must not include uploaded image bytes or introduce a remote analytics/state service.
 
 ## Architecture
 
 - `lib/solver.ts`: pure deterministic puzzle/search engine.
 - `lib/solver.worker.ts`: browser worker boundary for expensive search.
 - `lib/recognizer.ts`: deterministic, local screenshot-to-puzzle pipeline and recognition diagnostics.
+- `lib/local-history.ts`: optional bounded IndexedDB screenshot history; no network access.
 - `app/page.tsx`: full editable screenshot/manual workflow and execution guidance.
-- `app/share/page.tsx`: installed-PWA fast path for system-shared screenshots.
+- `app/share/page.tsx`: installed-PWA fast path and continuous Android execution loop.
 - `app/pwa-register.tsx`: Service Worker registration, install prompt and handoff from share flow to the full editor.
 - `public/manifest.webmanifest`: PWA install metadata and Web Share Target declaration.
 - `public/sw.js`: offline caching, local Share Target interception and short-lived shared-image storage.
 - `tests/solver.test.ts`: replay/legal-move solver regressions.
 - `tests/recognizer.test.ts` + `tests/fixtures/`: real screenshot recognition regressions.
 - `tests/pwa.test.ts`: PWA manifest/privacy/share-target contract regressions.
+- `tests/mobile-execution.test.ts`: continuous-play, Wake Lock, local history and resume contracts.
 
 ## Definition of done for solver/search changes
 
@@ -56,4 +62,14 @@
 - `/share` can consume a shared image, recognize it locally, run search in the Worker, and present a first actionable move.
 - The same shared image can be handed to the full editor for manual correction before its local cache entry is deleted/expired.
 - Offline shell behavior does not break ordinary online navigation or hashed Next.js assets.
+- `npm test` and `npm run build` pass.
+
+## Definition of done for continuous mobile execution changes
+
+- The primary mobile step action is reachable one-handed and the user can always roll back one step after a mistaken tap.
+- Selecting another screenshot resets the previous solution/worker cleanly and starts a fresh local recognize/solve cycle.
+- Wake Lock is released when no solution is active or the feature is disabled.
+- Execution step progress is stored locally per puzzle and restored only within valid solution bounds.
+- Screenshot history stays opt-in, capped at 8 items, pruned after 7 days, and never performs a network request.
+- Existing full-editor and Android Share Target fallbacks remain available.
 - `npm test` and `npm run build` pass.
