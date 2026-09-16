@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: "com.octoteo.watersortsolver",
   appName: "Water Sort Solver",
   webDir: "out",
-  bundledWebRuntime: false,
   server: {
     androidScheme: "https",
   },
