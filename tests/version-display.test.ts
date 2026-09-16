@@ -11,7 +11,7 @@ describe("release version display contract", () => {
     expect(layout).toContain('import packageJson from "../package.json"');
     expect(layout).toContain('"--app-version": `"v${packageJson.version}"`');
     expect(versionCss).toContain("content:var(--app-version)");
-    expect(versionCss).toContain('content:"ANDROID NATIVE + QUICK SOLVE · " var(--app-version)');
+    expect(versionCss).toContain('content:"ANDROID NATIVE + CONTINUOUS SOLVE · " var(--app-version)');
     expect(versionCss).not.toMatch(/content:\"v\d/i);
     expect(versionCss).not.toMatch(/V0\.\d/);
   });
