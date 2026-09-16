@@ -14,6 +14,13 @@ const captureServiceSource = resolve(root, "native/android/ScreenCaptureService.
 const updaterPluginSource = resolve(root, "native/android/NativeUpdaterPlugin.java");
 const iconSource = resolve(root, "public/icons/icon-512.png");
 const roundIconSource = resolve(root, "public/icons/maskable-512.png");
+const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
+const versionName = packageJson.version;
+const versionCode = Number(packageJson.androidVersionCode);
+
+if (!versionName || !Number.isInteger(versionCode) || versionCode <= 0) {
+  throw new Error("package.json must define version and a positive integer androidVersionCode");
+}
 
 await mkdir(javaDir, { recursive: true });
 await mkdir(drawableDir, { recursive: true });
@@ -97,8 +104,8 @@ await writeFile(manifestPath, manifest);
 
 let appBuildGradle = await readFile(appBuildGradlePath, "utf8");
 appBuildGradle = appBuildGradle
-  .replace(/versionCode\s+\d+/, "versionCode 7")
-  .replace(/versionName\s+"[^"]+"/, 'versionName "0.7.0"');
+  .replace(/versionCode\s+\d+/, `versionCode ${versionCode}`)
+  .replace(/versionName\s+"[^"]+"/, `versionName "${versionName}"`);
 await writeFile(appBuildGradlePath, appBuildGradle);
 
-console.log("Prepared Capacitor Android shell: split-screen capture, APK updater, ACTION_SEND, version 0.7.0.");
+console.log(`Prepared Capacitor Android shell: split-screen capture, APK updater, ACTION_SEND, version ${versionName} (${versionCode}).`);
