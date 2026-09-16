@@ -132,8 +132,8 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
           if [ -z "$GITEE_TOKEN" ]; then
-            echo "::notice::GITEE_TOKEN is not configured; Gitee mirror publish skipped."
-            exit 0
+            echo "::error::GITEE_TOKEN is required for the China update mirror."
+            exit 1
           fi
 
           VERSION=$(node -p "require('./package.json').version")
@@ -160,4 +160,43 @@ jobs:
           git add README.md Water-Sort-Solver.apk latest.json
           git commit -m "release: Android v${VERSION}"
           git remote add origin "https://octoteo:${GITEE_TOKEN}@gitee.com/octoteo/water-sort-solver-android.git"
-          git push --force origin HEAD:refs/heads/main
+          GIT_TERMINAL_PROMPT=0 timeout 180s git push --force origin HEAD:refs/heads/main
+
+      - name: Verify public Gitee update mirror
+        run: |
+          set -eu
+          GITEE_META="https://gitee.com/octoteo/water-sort-solver-android/raw/main/latest.json"
+          GITEE_APK="https://gitee.com/octoteo/water-sort-solver-android/raw/main/Water-Sort-Solver.apk"
+          EXPECTED_SHA=$(node -p "require('./latest.json').sha256")
+          LOCAL_VERSION=$(node -p "require('./package.json').version")
+          VERIFIED=0
+
+          for attempt in 1 2 3 4 5; do
+            rm -f gitee-latest.json gitee-apk.bin
+            if curl -fsSL --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 120 \
+                 -A "WaterSortSolver-Android/0.8" \
+                 -H "Accept: application/json,*/*" \
+                 -o gitee-latest.json "$GITEE_META" && \
+               curl -fsSL --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 180 \
+                 -A "WaterSortSolver-Android/0.8" \
+                 -H "Accept: application/vnd.android.package-archive,*/*" \
+                 -o gitee-apk.bin "$GITEE_APK"; then
+              REMOTE_SHA=$(sha256sum gitee-apk.bin | awk '{print $1}')
+              REMOTE_META_SHA=$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync('gitee-latest.json','utf8')).sha256 || '')")
+              REMOTE_VERSION=$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync('gitee-latest.json','utf8')).versionName || '')")
+              if [ "$REMOTE_SHA" = "$EXPECTED_SHA" ] && [ "$REMOTE_META_SHA" = "$EXPECTED_SHA" ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ]; then
+                echo "Verified Gitee mirror v${LOCAL_VERSION}, sha256=${EXPECTED_SHA}"
+                VERIFIED=1
+                break
+              fi
+              echo "::warning::Gitee mirror is reachable but has not converged yet (attempt ${attempt}/5)."
+            else
+              echo "::warning::Gitee mirror download failed (attempt ${attempt}/5)."
+            fi
+            sleep $((attempt * 5))
+          done
+
+          if [ "$VERIFIED" -ne 1 ]; then
+            echo "::error::Gitee mirror could not be verified after publishing."
+            exit 1
+          fi
