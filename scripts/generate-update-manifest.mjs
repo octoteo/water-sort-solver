@@ -16,7 +16,7 @@ if (!versionName || !Number.isInteger(versionCode) || versionCode <= 0) {
 }
 
 const giteeApkUrl = `https://gitee.com/octoteo/water-sort-solver-android/releases/download/v${versionName}/Water-Sort-Solver.apk`;
-const githubApkUrl = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk";
+const githubApkUrl = `https://github.com/octoteo/water-sort-solver/releases/download/v${versionName}/Water-Sort-Solver.apk`;
 
 const manifest = {
   versionCode,

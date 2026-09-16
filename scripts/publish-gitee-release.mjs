@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const token = process.env.GITEE_TOKEN;
@@ -10,13 +11,24 @@ const packageJson = JSON.parse(await readFile(new URL("../package.json", import.
 const version = packageJson.version;
 const tag = `v${version}`;
 const manifestText = await readFile("latest.json", "utf8");
+const manifest = JSON.parse(manifestText);
 const apk = await readFile("Water-Sort-Solver.apk");
+const expectedSha256 = String(manifest.sha256 ?? "").trim().toLowerCase();
+const actualSha256 = createHash("sha256").update(apk).digest("hex");
+const publicApkUrl = `https://gitee.com/${owner}/${repo}/releases/download/${tag}/Water-Sort-Solver.apk`;
 const readme = `# Water Sort Solver Android\n\n本仓库仅用于 Water Sort Solver Android APK 的中国大陆下载镜像，不是源码仓库。\n\n- 当前镜像版本：v${version}\n- APK：Gitee Release 附件\n- 更新元数据：latest.json\n- 源码：https://github.com/octoteo/water-sort-solver\n\nAPK 由 GitHub Actions 自动构建并通过 Gitee OpenAPI 同步；应用会校验 latest.json 中记录的 SHA-256。\n`;
+
+if (!/^[0-9a-f]{64}$/.test(expectedSha256)) {
+  throw new Error("latest.json must contain a valid SHA-256 before publishing");
+}
+if (actualSha256 !== expectedSha256) {
+  throw new Error(`local APK SHA-256 mismatch: expected ${expectedSha256}, got ${actualSha256}`);
+}
 
 const headers = {
   Authorization: `Bearer ${token}`,
   Accept: "application/json",
-  "User-Agent": "water-sort-solver-release-bot/0.8",
+  "User-Agent": "water-sort-solver-release-bot/0.9",
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -84,7 +96,6 @@ try {
 
 repoInfo = await getRepo();
 branch = repoInfo.default_branch || branch || "main";
-await writeFile("latest.json", manifestText, branch);
 
 let release = null;
 const releaseResponse = await request(`${api}/releases/tags/${encodeURIComponent(tag)}`, {}, [404]);
@@ -144,7 +155,7 @@ async function upload(name, bytes, type) {
       const response = await request(`${api}/releases/${release.id}/attach_files`, {
         method: "POST",
         body: form,
-      }, [], 300_000);
+      }, [], 180_000);
       const asset = await response.json();
       if (asset?.id) return asset;
       throw new Error(`Gitee upload of ${name} returned no asset id`);
@@ -165,6 +176,47 @@ async function upload(name, bytes, type) {
   throw lastError;
 }
 
+async function verifyPublicApk() {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const response = await fetch(publicApkUrl, {
+        headers: {
+          Accept: "application/vnd.android.package-archive,*/*",
+          "User-Agent": "WaterSortSolver-Android/0.9",
+        },
+        redirect: "follow",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const remoteSha256 = createHash("sha256").update(bytes).digest("hex");
+      if (remoteSha256 !== expectedSha256) {
+        throw new Error(`SHA-256 mismatch: expected ${expectedSha256}, got ${remoteSha256}`);
+      }
+      console.log(`Verified public Gitee APK ${tag}, sha256=${remoteSha256}`);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn(`Gitee public APK verification attempt ${attempt}/5 failed: ${error.message}`);
+      if (attempt < 5) await sleep(attempt * 5_000);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`Gitee APK was uploaded but never became publicly verifiable: ${lastError?.message ?? "unknown error"}`);
+}
+
 const apkAsset = await upload("Water-Sort-Solver.apk", apk, "application/vnd.android.package-archive");
 await upload("latest.json", Buffer.from(manifestText, "utf8"), "application/json");
-console.log(`Published Gitee Release ${tag} on ${branch}: ${apkAsset.browser_download_url ?? "APK uploaded"}`);
+await verifyPublicApk();
+
+// Publish the discovery manifest only after the release asset is publicly downloadable
+// and byte-for-byte identical. If any earlier step fails, clients keep seeing the
+// previous healthy version instead of a phantom update.
+await writeFile("latest.json", manifestText, branch);
+
+console.log(`Published Gitee Release ${tag} on ${branch}: ${apkAsset.browser_download_url ?? publicApkUrl}`);
+console.log(`Published discovery manifest only after public APK verification: ${tag}`);

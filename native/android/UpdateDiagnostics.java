@@ -61,7 +61,11 @@ final class UpdateDiagnostics {
     }
 
     static synchronized void recordException(Context context, String stage, Throwable error) {
-        JSONObject data = new JSONObject();
+        recordException(context, stage, error, null);
+    }
+
+    static synchronized void recordException(Context context, String stage, Throwable error, JSONObject extra) {
+        JSONObject data = extra == null ? new JSONObject() : extra;
         try {
             data.put("exception", error == null ? "unknown" : error.getClass().getName());
             data.put("detail", error == null || error.getMessage() == null ? "" : error.getMessage());

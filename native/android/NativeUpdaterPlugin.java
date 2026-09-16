@@ -43,9 +43,7 @@ public class NativeUpdaterPlugin extends Plugin {
     private static final String GITHUB_RELEASE_MANIFEST = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/latest.json";
     private static final String[] MANIFEST_URLS = new String[]{
         GITEE_MANIFEST,
-        GITHUB_RELEASE_MANIFEST,
-        "https://water-sort-solver-eight.vercel.app/update/latest.json",
-        "https://raw.githubusercontent.com/octoteo/water-sort-solver/main/public/update/latest.json"
+        GITHUB_RELEASE_MANIFEST
     };
 
     private volatile UpdatePlan lastPlan;
@@ -112,6 +110,18 @@ public class NativeUpdaterPlugin extends Plugin {
         UpdateDiagnostics.record(getContext(), "check.start", "checking update manifests");
         new Thread(() -> {
             Exception lastError = null;
+            UpdatePlan bestPlan = null;
+            PackageInfo current;
+            long currentCode;
+            try {
+                current = getPackageInfo(0);
+                currentCode = getVersionCode(current);
+            } catch (Exception error) {
+                UpdateDiagnostics.recordException(getContext(), "check.failure", error);
+                call.reject("检查更新失败：" + error.getMessage());
+                return;
+            }
+
             for (String manifestUrl : MANIFEST_URLS) {
                 try {
                     JSONObject attempt = new JSONObject();
@@ -119,48 +129,66 @@ public class NativeUpdaterPlugin extends Plugin {
                     UpdateDiagnostics.record(getContext(), "check.manifest.try", "fetch manifest", attempt);
 
                     JSONObject manifest = fetchJson(manifestUrl);
-                    PackageInfo current = getPackageInfo(0);
-                    long currentCode = getVersionCode(current);
                     long latestCode = manifest.optLong("versionCode", currentCode);
                     String latestName = manifest.optString("versionName", String.valueOf(latestCode));
                     String notes = manifest.optString("notes", "");
                     String sha256 = normalizeSha256(manifest.optString("sha256", ""));
                     List<ApkSource> sources = parseSources(manifest);
                     if (sources.isEmpty()) throw new IllegalStateException("更新清单缺少 APK 下载地址");
+                    if (sha256.isEmpty()) throw new IllegalStateException("更新清单缺少 APK SHA-256");
 
-                    UpdatePlan plan = new UpdatePlan(latestCode, latestName, notes, sha256, manifestUrl, sources);
-                    lastPlan = plan;
-
+                    UpdatePlan candidate = new UpdatePlan(latestCode, latestName, notes, sha256, manifestUrl, sources);
                     JSONObject data = new JSONObject();
                     data.put("manifestUrl", manifestUrl);
                     data.put("currentVersionCode", currentCode);
                     data.put("latestVersionCode", latestCode);
                     data.put("latestVersionName", latestName);
-                    data.put("sha256Present", !sha256.isEmpty());
+                    data.put("sha256Present", true);
                     data.put("sourceCount", sources.size());
-                    UpdateDiagnostics.record(getContext(), "check.success", "update manifest accepted", data);
+                    data.put("selected", bestPlan == null || latestCode > bestPlan.versionCode);
+                    UpdateDiagnostics.record(getContext(), "check.manifest.accepted", "valid update manifest", data);
 
-                    JSObject result = new JSObject();
-                    result.put("available", latestCode > currentCode);
-                    result.put("currentVersionCode", currentCode);
-                    result.put("currentVersionName", current.versionName != null ? current.versionName : "0.0.0");
-                    result.put("versionCode", latestCode);
-                    result.put("versionName", latestName);
-                    result.put("apkUrl", sources.get(0).url);
-                    result.put("fallbackApkUrl", sources.size() > 1 ? sources.get(1).url : "");
-                    result.put("downloadSource", sources.get(0).name);
-                    result.put("sha256", sha256);
-                    result.put("notes", notes);
-                    result.put("manifestUrl", manifestUrl);
-                    call.resolve(result);
-                    return;
+                    if (bestPlan == null || latestCode > bestPlan.versionCode) {
+                        bestPlan = candidate;
+                    }
                 } catch (Exception error) {
                     lastError = error;
-                    UpdateDiagnostics.recordException(getContext(), "check.manifest.failure", error);
+                    JSONObject failure = new JSONObject();
+                    try { failure.put("manifestUrl", manifestUrl); } catch (Exception ignored) {}
+                    UpdateDiagnostics.recordException(getContext(), "check.manifest.failure", error, failure);
                 }
             }
-            UpdateDiagnostics.recordException(getContext(), "check.failure", lastError);
-            call.reject("检查更新失败：" + (lastError != null ? lastError.getMessage() : "网络不可用"));
+
+            if (bestPlan == null) {
+                UpdateDiagnostics.recordException(getContext(), "check.failure", lastError);
+                call.reject("检查更新失败：" + (lastError != null ? lastError.getMessage() : "网络不可用"));
+                return;
+            }
+
+            lastPlan = bestPlan;
+            JSONObject selected = new JSONObject();
+            try {
+                selected.put("manifestUrl", bestPlan.manifestUrl);
+                selected.put("currentVersionCode", currentCode);
+                selected.put("latestVersionCode", bestPlan.versionCode);
+                selected.put("latestVersionName", bestPlan.versionName);
+                selected.put("sourceCount", bestPlan.sources.size());
+            } catch (Exception ignored) {}
+            UpdateDiagnostics.record(getContext(), "check.success", "best update manifest selected", selected);
+
+            JSObject result = new JSObject();
+            result.put("available", bestPlan.versionCode > currentCode);
+            result.put("currentVersionCode", currentCode);
+            result.put("currentVersionName", current.versionName != null ? current.versionName : "0.0.0");
+            result.put("versionCode", bestPlan.versionCode);
+            result.put("versionName", bestPlan.versionName);
+            result.put("apkUrl", bestPlan.sources.get(0).url);
+            result.put("fallbackApkUrl", bestPlan.sources.size() > 1 ? bestPlan.sources.get(1).url : "");
+            result.put("downloadSource", bestPlan.sources.get(0).name);
+            result.put("sha256", bestPlan.sha256);
+            result.put("notes", bestPlan.notes);
+            result.put("manifestUrl", bestPlan.manifestUrl);
+            call.resolve(result);
         }, "water-sort-update-check").start();
     }
 
@@ -236,9 +264,10 @@ public class NativeUpdaterPlugin extends Plugin {
                         verifyData.put("bytes", target.length());
                         verifyData.put("expectedSha256", expectedSha256);
                         verifyData.put("actualSha256", actualSha256);
-                        verifyData.put("verified", expectedSha256.isEmpty() || actualSha256.equals(expectedSha256));
+                        verifyData.put("verified", !expectedSha256.isEmpty() && actualSha256.equals(expectedSha256));
                         UpdateDiagnostics.record(getContext(), "download.sha256", "apk digest calculated", verifyData);
-                        if (!expectedSha256.isEmpty() && !actualSha256.equals(expectedSha256)) {
+                        if (expectedSha256.isEmpty()) throw new IllegalStateException("更新清单缺少 APK SHA-256");
+                        if (!actualSha256.equals(expectedSha256)) {
                             throw new IllegalStateException("APK SHA-256 校验失败");
                         }
 
@@ -256,11 +285,22 @@ public class NativeUpdaterPlugin extends Plugin {
                         break;
                     } catch (Exception error) {
                         lastDownloadError = error;
-                        UpdateDiagnostics.recordException(getContext(), "download.failure", error);
+                        JSONObject failure = new JSONObject();
+                        try {
+                            failure.put("source", source.name);
+                            failure.put("url", source.url);
+                        } catch (Exception ignored) {}
+                        UpdateDiagnostics.recordException(getContext(), "download.failure", error, failure);
                     }
                 }
 
                 if (successfulSource == null) {
+                    JSONObject exhausted = new JSONObject();
+                    try {
+                        exhausted.put("attemptedSources", candidates.size());
+                        exhausted.put("lastError", lastDownloadError != null ? lastDownloadError.getMessage() : "所有更新源均不可用");
+                    } catch (Exception ignored) {}
+                    UpdateDiagnostics.record(getContext(), "download.all_sources_failed", "all update sources failed", exhausted);
                     throw new IllegalStateException(lastDownloadError != null ? lastDownloadError.getMessage() : "所有更新源均不可用");
                 }
 
@@ -282,7 +322,7 @@ public class NativeUpdaterPlugin extends Plugin {
                 result.put("sessionId", sessionId);
                 call.resolve(result);
             } catch (Exception error) {
-                UpdateDiagnostics.recordException(getContext(), "install.prepare.failure", error);
+                UpdateDiagnostics.recordException(getContext(), "update.prepare.failure", error);
                 if (target != null) {
                     //noinspection ResultOfMethodCallIgnored
                     target.delete();

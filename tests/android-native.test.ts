@@ -100,6 +100,8 @@ describe("v0.9.5 Android native contract", () => {
     expect(updaterPlugin).toContain('"network.apk.response"');
     expect(updaterPlugin).toContain('"download.sha256"');
     expect(updaterPlugin).toContain('"apk.preflight"');
+    expect(updaterPlugin).toContain('"download.all_sources_failed"');
+    expect(updaterPlugin).toContain('"update.prepare.failure"');
     expect(updaterPlugin).toContain('"session.commit.called"');
     expect(installReceiver).toContain('"receiver.status"');
     expect(installReceiver).toContain('"receiver.confirmation.launch.failure"');
@@ -109,12 +111,34 @@ describe("v0.9.5 Android native contract", () => {
     expect(pwaRegister).toContain("不会自动上传");
   });
 
-  it("keeps the China-first update mirror", () => {
+  it("checks all trusted discovery manifests and selects the newest valid version", () => {
+    expect(updaterPlugin).toContain("UpdatePlan bestPlan = null");
+    expect(updaterPlugin).toContain("latestCode > bestPlan.versionCode");
+    expect(updaterPlugin).toContain('"check.manifest.accepted"');
+    expect(updaterPlugin).toContain("GITEE_MANIFEST");
+    expect(updaterPlugin).toContain("GITHUB_RELEASE_MANIFEST");
+    expect(updaterPlugin).not.toContain("water-sort-solver-eight.vercel.app/update/latest.json");
+    expect(updaterPlugin).not.toContain("raw.githubusercontent.com/octoteo/water-sort-solver/main/public/update/latest.json");
+  });
+
+  it("keeps the China-first update mirror with immutable versioned APK URLs", () => {
     expect(updateManifest.versionCode).toBe(16);
     expect(updateManifest.versionName).toBe("0.9.5");
     expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.5/Water-Sort-Solver.apk");
-    expect(updateManifest.apkSources[1].url).toBe("https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk");
+    expect(updateManifest.apkSources[1].url).toBe("https://github.com/octoteo/water-sort-solver/releases/download/v0.9.5/Water-Sort-Solver.apk");
     expect(generateManifestScript).toContain("releases/download/v${versionName}/Water-Sort-Solver.apk");
+    expect(generateManifestScript).not.toContain('releases/download/android-latest/Water-Sort-Solver.apk');
+  });
+
+  it("publishes discoverable metadata only after release APK verification", () => {
+    expect(workflow).toContain("Publish versioned GitHub Android release");
+    expect(workflow).toContain("Verified GitHub release");
+    expect(workflow).toContain("Publish verified GitHub discovery release");
+    expect(workflow.indexOf("Publish versioned GitHub Android release")).toBeLessThan(workflow.indexOf("Publish verified GitHub discovery release"));
+    expect(workflow.indexOf("Publish verified GitHub discovery release")).toBeLessThan(workflow.indexOf("Publish China update mirror to Gitee OpenAPI"));
+    expect(publishGiteeScript).toContain("verifyPublicApk");
+    expect(publishGiteeScript).toContain("await verifyPublicApk();");
+    expect(publishGiteeScript.indexOf("await verifyPublicApk();")).toBeLessThan(publishGiteeScript.lastIndexOf('await writeFile("latest.json", manifestText, branch)'));
   });
 
   it("builds one APK and publishes the same bytes to GitHub and Gitee", () => {
@@ -124,7 +148,8 @@ describe("v0.9.5 Android native contract", () => {
     expect(workflow).toContain("Water-Sort-Solver.apk");
     expect(workflow).toContain("GITEE_TOKEN");
     expect(workflow).toContain("publish-gitee-release.mjs");
-    expect(workflow).toContain("Verify public Gitee update mirror");
+    expect(workflow).toContain("sha256sum github-apk.bin");
+    expect(workflow).toContain("sha256sum github-rolling-apk.bin");
     expect(publishGiteeScript).toContain("attach_files");
   });
 });
