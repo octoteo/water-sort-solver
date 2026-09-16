@@ -12,13 +12,21 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ScreenCapturePlugin.class);
         registerPlugin(NativeUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
+        UpdateDiagnostics.record(this, "activity.create", "MainActivity created");
         ShareReceiverPlugin.captureIntent(this, getIntent());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        UpdateDiagnostics.record(this, "activity.resume", "MainActivity resumed");
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        UpdateDiagnostics.record(this, "activity.new_intent", intent == null ? "null intent" : String.valueOf(intent.getAction()));
         ShareReceiverPlugin.captureIntent(this, intent);
     }
 }
