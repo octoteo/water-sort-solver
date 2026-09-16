@@ -15,10 +15,10 @@ const pwaRegister = readFileSync(new URL("../app/pwa-register.tsx", import.meta.
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
 
-describe("v0.8 Android native contract", () => {
+describe("v0.8.1 Android native contract", () => {
   it("bundles the static app into Capacitor 8 without a runtime server", () => {
-    expect(packageJson.version).toBe("0.8.0");
-    expect(packageJson.androidVersionCode).toBe(8);
+    expect(packageJson.version).toBe("0.8.1");
+    expect(packageJson.androidVersionCode).toBe(9);
     expect(packageJson.dependencies["@capacitor/core"]).toBe("8.5.2");
     expect(packageJson.dependencies["@capacitor/android"]).toBe("8.5.2");
     expect(packageJson.devDependencies["@capacitor/cli"]).toBe("8.5.2");
@@ -65,13 +65,13 @@ describe("v0.8 Android native contract", () => {
     expect(pwaRegister).toContain('registerPlugin<NativeUpdaterPlugin>("NativeUpdater")');
     expect(pwaRegister).toContain("UPDATE_CHECK_INTERVAL");
     expect(pwaRegister).toContain("立即更新");
-    expect(updateManifest.versionCode).toBe(8);
-    expect(updateManifest.versionName).toBe("0.8.0");
+    expect(updateManifest.versionCode).toBe(9);
+    expect(updateManifest.versionName).toBe("0.8.1");
   });
 
   it("uses a China-friendly Gitee mirror first and GitHub as an automatic fallback", () => {
     const giteeManifest = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/latest.json";
-    const giteeApk = "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.8.0/Water-Sort-Solver.apk";
+    const giteeApk = "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.8.1/Water-Sort-Solver.apk";
     const githubApk = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk";
     expect(updaterPlugin).toContain(giteeManifest);
     expect(updaterPlugin.indexOf("GITEE_MANIFEST")).toBeLessThan(updaterPlugin.indexOf("GITHUB_RELEASE_MANIFEST"));

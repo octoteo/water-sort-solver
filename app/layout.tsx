@@ -4,6 +4,7 @@ import "./v03.css";
 import "./v04.css";
 import "./v05.css";
 import "./v06.css";
+import packageJson from "../package.json";
 import PwaRegister from "./pwa-register";
 
 export const metadata: Metadata = {
@@ -32,6 +33,10 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+const appVersionStyle = {
+  "--app-version": `"v${packageJson.version}"`,
+} as React.CSSProperties;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-CN"><body><PwaRegister />{children}</body></html>;
+  return <html lang="zh-CN"><body style={appVersionStyle}><PwaRegister />{children}</body></html>;
 }
