@@ -36,7 +36,7 @@ describe("v0.5+ mobile execution contract", () => {
   });
 
   it("bumps the offline application shell cache for the current release", () => {
-    expect(serviceWorker).toContain('const VERSION = "0.9.4"');
+    expect(serviceWorker).toContain('const VERSION = "0.9.5"');
     expect(serviceWorker).toContain('const PAGE_SHELLS = ["/", "/share"]');
   });
 });
