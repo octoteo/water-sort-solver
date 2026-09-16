@@ -23,13 +23,47 @@ type NativeShareReceiverPlugin = {
   ) => Promise<{ remove: () => Promise<void> }>;
 };
 
+type NativeCapturePayload = {
+  uri?: string;
+  mimeType?: string;
+  name?: string;
+  width?: number;
+  height?: number;
+};
+
+type NativeScreenCapturePlugin = {
+  captureOtherPane: () => Promise<NativeCapturePayload>;
+};
+
+type NativeUpdateInfo = {
+  available: boolean;
+  currentVersionCode: number;
+  currentVersionName: string;
+  versionCode: number;
+  versionName: string;
+  apkUrl: string;
+  notes?: string;
+  manifestUrl?: string;
+};
+
+type NativeUpdaterPlugin = {
+  getCurrentVersion: () => Promise<{ versionName: string; versionCode: number }>;
+  checkForUpdate: () => Promise<NativeUpdateInfo>;
+  installUpdate: (options: { apkUrl: string }) => Promise<{ started: boolean; needsPermission: boolean }>;
+};
+
 const NativeShareReceiver = registerPlugin<NativeShareReceiverPlugin>("ShareReceiver");
+const NativeScreenCapture = registerPlugin<NativeScreenCapturePlugin>("ScreenCapture");
+const NativeUpdater = registerPlugin<NativeUpdaterPlugin>("NativeUpdater");
+const UPDATE_CHECK_KEY = "water-sort-native-update-check-v1";
+const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 
 function isNativeApp() {
   return Capacitor.isNativePlatform();
 }
 
 function isNativeSharePage() {
+  if (typeof window === "undefined") return false;
   return window.location.pathname === "/share" || window.location.pathname === "/share.html";
 }
 
@@ -74,9 +108,15 @@ export default function PwaRegister() {
   const [installed, setInstalled] = useState(false);
   const [online, setOnline] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [nativeRuntime, setNativeRuntime] = useState(false);
+  const [nativeVersion, setNativeVersion] = useState<string | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<NativeUpdateInfo | null>(null);
 
   useEffect(() => {
     const native = isNativeApp();
+    setNativeRuntime(native);
     setInstalled(isStandalone());
     setOnline(navigator.onLine);
 
@@ -112,7 +152,26 @@ export default function PwaRegister() {
   }, []);
 
   useEffect(() => {
-    if (!isNativeApp()) return;
+    if (!nativeRuntime) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const current = await NativeUpdater.getCurrentVersion();
+        if (!cancelled) setNativeVersion(current.versionName);
+        const lastCheck = Number(localStorage.getItem(UPDATE_CHECK_KEY) ?? 0) || 0;
+        if (Date.now() - lastCheck < UPDATE_CHECK_INTERVAL) return;
+        const update = await NativeUpdater.checkForUpdate();
+        localStorage.setItem(UPDATE_CHECK_KEY, String(Date.now()));
+        if (!cancelled && update.available) setUpdateInfo(update);
+      } catch {
+        // Updating is convenience-only. The offline solver must never depend on it.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [nativeRuntime]);
+
+  useEffect(() => {
+    if (!nativeRuntime) return;
     let cancelled = false;
     let listenerHandle: { remove: () => Promise<void> } | null = null;
 
@@ -160,10 +219,10 @@ export default function PwaRegister() {
       cancelled = true;
       if (listenerHandle) void listenerHandle.remove();
     };
-  }, []);
+  }, [nativeRuntime]);
 
   useEffect(() => {
-    if (isNativeApp() || window.location.pathname !== "/") return;
+    if (nativeRuntime || window.location.pathname !== "/") return;
     const params = new URLSearchParams(window.location.search);
     const token = params.get("shared");
     if (!token) return;
@@ -190,7 +249,7 @@ export default function PwaRegister() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [nativeRuntime]);
 
   const install = async () => {
     if (!installPrompt) return;
@@ -199,10 +258,75 @@ export default function PwaRegister() {
     if (choice.outcome === "accepted") setInstallPrompt(null);
   };
 
+  const captureSplitScreen = async () => {
+    if (!nativeRuntime || captureBusy) return;
+    setCaptureBusy(true);
+    try {
+      const payload = await NativeScreenCapture.captureOtherPane();
+      if (!payload.uri) throw new Error("Android 没有返回分屏截图。");
+      const localUrl = Capacitor.convertFileSrc(payload.uri);
+      const response = await fetch(localUrl, { cache: "no-store" });
+      if (!response.ok) throw new Error("无法读取刚刚截取的分屏画面。");
+      const blob = await response.blob();
+      const mimeType = payload.mimeType || blob.type || "image/jpeg";
+      const name = payload.name || `split-screen.${fileExtension(mimeType)}`;
+      await dispatchImageFile(new File([blob], name, { type: mimeType }));
+      setNotice(`已截取另一侧游戏窗口${payload.width && payload.height ? `（${payload.width}×${payload.height}）` : ""}，正在本地识别。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "分屏截图失败。");
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
+
+  const checkNativeUpdate = async () => {
+    if (!nativeRuntime || updateBusy) return;
+    setUpdateBusy(true);
+    try {
+      const update = await NativeUpdater.checkForUpdate();
+      localStorage.setItem(UPDATE_CHECK_KEY, String(Date.now()));
+      setUpdateInfo(update.available ? update : null);
+      setNotice(update.available ? `发现新版本 v${update.versionName}。` : `当前 v${update.currentVersionName} 已是最新版本。`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "检查更新失败。");
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
+  const installNativeUpdate = async () => {
+    if (!updateInfo || updateBusy) return;
+    setUpdateBusy(true);
+    try {
+      const result = await NativeUpdater.installUpdate({ apkUrl: updateInfo.apkUrl });
+      if (result.needsPermission) {
+        setNotice("请在系统设置中允许 Water Sort Solver“安装未知应用”，返回后再点一次更新。");
+      } else if (result.started) {
+        setNotice("新版 APK 已下载，按 Android 系统安装提示完成更新即可；原有本机数据会保留。");
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "安装更新失败。");
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
   return (
     <>
       {!installed && installPrompt && <button className="pwa-install-fab" type="button" onClick={() => void install()}>安装到桌面</button>}
-      {!isNativeApp() && !online && <div className="pwa-offline-chip">离线模式</div>}
+      {!nativeRuntime && !online && <div className="pwa-offline-chip">离线模式</div>}
+
+      {nativeRuntime && isNativeSharePage() && <div className="native-tool-dock" role="group" aria-label="Android 原生工具">
+        <button className="native-split-capture" type="button" disabled={captureBusy} onClick={() => void captureSplitScreen()}>{captureBusy ? "正在截图…" : "📸 分屏截图"}</button>
+        <button className="native-update-button" type="button" disabled={updateBusy} onClick={() => void checkNativeUpdate()}>{updateBusy ? "检查中…" : `更新${nativeVersion ? ` · v${nativeVersion}` : ""}`}</button>
+      </div>}
+
+      {nativeRuntime && updateInfo?.available && <div className="native-update-banner">
+        <div><strong>发现 v{updateInfo.versionName}</strong><span>{updateInfo.notes || "有新的 Android 版本可安装。"}</span></div>
+        <button type="button" disabled={updateBusy} onClick={() => void installNativeUpdate()}>{updateBusy ? "准备中…" : "立即更新"}</button>
+        <button className="native-update-close" type="button" aria-label="稍后更新" onClick={() => setUpdateInfo(null)}>×</button>
+      </div>}
+
       {notice && <button className="pwa-notice" type="button" onClick={() => setNotice(null)} title="点击关闭">{notice}</button>}
     </>
   );
