@@ -8,6 +8,7 @@ const sharePlugin = readFileSync(new URL("../native/android/ShareReceiverPlugin.
 const capturePlugin = readFileSync(new URL("../native/android/ScreenCapturePlugin.java", import.meta.url), "utf8");
 const captureService = readFileSync(new URL("../native/android/ScreenCaptureService.java", import.meta.url), "utf8");
 const updaterPlugin = readFileSync(new URL("../native/android/NativeUpdaterPlugin.java", import.meta.url), "utf8");
+const installReceiver = readFileSync(new URL("../native/android/NativeInstallReceiver.java", import.meta.url), "utf8");
 const prepareScript = readFileSync(new URL("../scripts/prepare-android.mjs", import.meta.url), "utf8");
 const generateManifestScript = readFileSync(new URL("../scripts/generate-update-manifest.mjs", import.meta.url), "utf8");
 const publishGiteeScript = readFileSync(new URL("../scripts/publish-gitee-release.mjs", import.meta.url), "utf8");
@@ -16,10 +17,10 @@ const solverWorker = readFileSync(new URL("../lib/solver.worker.ts", import.meta
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
 
-describe("v0.9.1 Android native contract", () => {
+describe("v0.9.2 Android native contract", () => {
   it("bundles the static app into Capacitor 8 without a runtime server", () => {
-    expect(packageJson.version).toBe("0.9.1");
-    expect(packageJson.androidVersionCode).toBe(12);
+    expect(packageJson.version).toBe("0.9.2");
+    expect(packageJson.androidVersionCode).toBe(13);
     expect(packageJson.dependencies["@capacitor/core"]).toBe("8.5.2");
     expect(packageJson.dependencies["@capacitor/android"]).toBe("8.5.2");
     expect(capacitorConfig).toContain('appId: "com.octoteo.watersortsolver"');
@@ -70,15 +71,26 @@ describe("v0.9.1 Android native contract", () => {
     expect(solverWorker.indexOf("assessPuzzleIntegrity")).toBeLessThan(solverWorker.indexOf("solveWithLockedCups(cups"));
   });
 
-  it("keeps the MIUI-safe APK updater and China-first update mirror", () => {
+  it("installs updates through PackageInstaller instead of exposing FileProvider to MIUI", () => {
     expect(mainActivity).toContain("registerPlugin(NativeUpdaterPlugin.class)");
-    expect(updaterPlugin).toContain("Intent.ACTION_INSTALL_PACKAGE");
-    expect(updaterPlugin).toContain("ClipData.newRawUri");
-    expect(updaterPlugin).toContain("grantUriPermission");
+    expect(updaterPlugin).toContain("PackageInstaller.SessionParams");
+    expect(updaterPlugin).toContain('session.openWrite("base.apk"');
+    expect(updaterPlugin).toContain("session.commit(statusReceiver)");
+    expect(updaterPlugin).toContain("PendingIntent.FLAG_MUTABLE");
+    expect(updaterPlugin).not.toContain("FileProvider");
+    expect(updaterPlugin).not.toContain("Intent.ACTION_INSTALL_PACKAGE");
+    expect(installReceiver).toContain("PackageInstaller.STATUS_PENDING_USER_ACTION");
+    expect(installReceiver).toContain("Intent.EXTRA_INTENT");
+    expect(prepareScript).toContain('android:name=".NativeInstallReceiver"');
+    expect(prepareScript).not.toContain("water_sort_file_paths");
+    expect(prepareScript).not.toContain("androidx.core.content.FileProvider");
     expect(updaterPlugin).toContain('MessageDigest.getInstance("SHA-256")');
-    expect(updateManifest.versionCode).toBe(12);
-    expect(updateManifest.versionName).toBe("0.9.1");
-    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.1/Water-Sort-Solver.apk");
+  });
+
+  it("keeps the China-first update mirror", () => {
+    expect(updateManifest.versionCode).toBe(13);
+    expect(updateManifest.versionName).toBe("0.9.2");
+    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.2/Water-Sort-Solver.apk");
     expect(updateManifest.apkSources[1].url).toBe("https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk");
     expect(generateManifestScript).toContain("releases/download/v${versionName}/Water-Sort-Solver.apk");
   });
