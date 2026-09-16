@@ -10,6 +10,7 @@ const captureService = readFileSync(new URL("../native/android/ScreenCaptureServ
 const updaterPlugin = readFileSync(new URL("../native/android/NativeUpdaterPlugin.java", import.meta.url), "utf8");
 const prepareScript = readFileSync(new URL("../scripts/prepare-android.mjs", import.meta.url), "utf8");
 const generateManifestScript = readFileSync(new URL("../scripts/generate-update-manifest.mjs", import.meta.url), "utf8");
+const publishGiteeScript = readFileSync(new URL("../scripts/publish-gitee-release.mjs", import.meta.url), "utf8");
 const pwaRegister = readFileSync(new URL("../app/pwa-register.tsx", import.meta.url), "utf8");
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
@@ -70,7 +71,7 @@ describe("v0.8 Android native contract", () => {
 
   it("uses a China-friendly Gitee mirror first and GitHub as an automatic fallback", () => {
     const giteeManifest = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/latest.json";
-    const giteeApk = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/Water-Sort-Solver.apk";
+    const giteeApk = "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.8.0/Water-Sort-Solver.apk";
     const githubApk = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk";
     expect(updaterPlugin).toContain(giteeManifest);
     expect(updaterPlugin.indexOf("GITEE_MANIFEST")).toBeLessThan(updaterPlugin.indexOf("GITHUB_RELEASE_MANIFEST"));
@@ -78,7 +79,7 @@ describe("v0.8 Android native contract", () => {
     expect(updaterPlugin).toContain("candidates.addAll(plan.sources)");
     expect(updateManifest.apkSources[0].url).toBe(giteeApk);
     expect(updateManifest.apkSources[1].url).toBe(githubApk);
-    expect(generateManifestScript).toContain(giteeApk);
+    expect(generateManifestScript).toContain("releases/download/v${versionName}/Water-Sort-Solver.apk");
     expect(generateManifestScript).toContain(githubApk);
   });
 
@@ -104,7 +105,7 @@ describe("v0.8 Android native contract", () => {
     expect(pwaRegister).toContain("clearPendingShare");
   });
 
-  it("builds one APK and can publish the same bytes to GitHub plus the Gitee distribution repository", () => {
+  it("builds one APK and publishes the same bytes to GitHub and a Gitee Release", () => {
     expect(workflow).toContain("npx cap add android");
     expect(workflow).toContain("sdkmanager \"platforms;android-36\"");
     expect(workflow).toContain("mkdir -p ~/.android");
@@ -115,8 +116,12 @@ describe("v0.8 Android native contract", () => {
     expect(workflow).toContain("Water-Sort-Solver.apk");
     expect(workflow).toContain("gh release create android-latest Water-Sort-Solver.apk latest.json");
     expect(workflow).toContain("GITEE_TOKEN");
-    expect(workflow).toContain("octoteo/water-sort-solver-android.git");
-    expect(workflow).toContain("git push --force origin HEAD:refs/heads/main");
+    expect(workflow).toContain("publish-gitee-release.mjs");
+    expect(workflow).toContain("Verify public Gitee update mirror");
     expect(workflow).toContain("contents: write");
+    expect(publishGiteeScript).toContain("/releases");
+    expect(publishGiteeScript).toContain("attach_files");
+    expect(publishGiteeScript).toContain("Water-Sort-Solver.apk");
+    expect(publishGiteeScript).toContain("latest.json");
   });
 });
