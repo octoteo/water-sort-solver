@@ -138,6 +138,30 @@ jobs:
           test "$ACTUAL_SHA" = "$EXPECTED_SHA"
           echo "Verified GitHub release ${TAG}, sha256=${ACTUAL_SHA}"
 
+      - name: Publish verified GitHub discovery release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          VERSION=$(node -p "require('./package.json').version")
+          EXPECTED_SHA=$(node -p "require('./latest.json').sha256")
+
+          # Keep this stable tag for older installed builds. It is published only
+          # after the immutable/versioned release above has been downloaded and
+          # verified, so it can never advertise bytes that do not yet exist.
+          gh release delete android-latest --cleanup-tag -y || true
+          gh release create android-latest Water-Sort-Solver.apk latest.json \
+            --target "$GITHUB_SHA" \
+            --title "Water Sort Solver Android v${VERSION}" \
+            --notes "Compatibility discovery release for installed Android builds. The manifest points to the verified versioned release." \
+            --latest
+
+          rm -f github-rolling-apk.bin
+          gh release download android-latest -p Water-Sort-Solver.apk -O github-rolling-apk.bin
+          ROLLING_SHA=$(sha256sum github-rolling-apk.bin | awk '{print $1}')
+          test "$ROLLING_SHA" = "$EXPECTED_SHA"
+          echo "Verified GitHub discovery release android-latest, sha256=${ROLLING_SHA}"
+
       - name: Publish China update mirror to Gitee OpenAPI
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
