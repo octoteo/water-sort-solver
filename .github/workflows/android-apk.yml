@@ -18,7 +18,7 @@ on:
       - ".github/workflows/android-apk.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-apk-main
@@ -60,6 +60,7 @@ jobs:
         run: |
           test -f out/index.html
           test -f out/share.html
+          test -f out/update/latest.json
 
       - name: Generate Capacitor Android project
         run: |
@@ -79,10 +80,24 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
+      - name: Stage rolling APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Water-Sort-Solver.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: water-sort-solver-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: Water-Sort-Solver.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish rolling Android release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-latest --cleanup-tag -y || true
+          gh release create android-latest Water-Sort-Solver.apk \
+            --target "$GITHUB_SHA" \
+            --title "Water Sort Solver Android v0.7.0" \
+            --notes "Android rolling build. v0.7 adds automatic update checks and user-authorized split-screen capture for local recognition." \
+            --latest
