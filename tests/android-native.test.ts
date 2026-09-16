@@ -12,13 +12,14 @@ const prepareScript = readFileSync(new URL("../scripts/prepare-android.mjs", imp
 const generateManifestScript = readFileSync(new URL("../scripts/generate-update-manifest.mjs", import.meta.url), "utf8");
 const publishGiteeScript = readFileSync(new URL("../scripts/publish-gitee-release.mjs", import.meta.url), "utf8");
 const pwaRegister = readFileSync(new URL("../app/pwa-register.tsx", import.meta.url), "utf8");
+const solverWorker = readFileSync(new URL("../lib/solver.worker.ts", import.meta.url), "utf8");
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
 
-describe("v0.9.0 Android native contract", () => {
+describe("v0.9.1 Android native contract", () => {
   it("bundles the static app into Capacitor 8 without a runtime server", () => {
-    expect(packageJson.version).toBe("0.9.0");
-    expect(packageJson.androidVersionCode).toBe(11);
+    expect(packageJson.version).toBe("0.9.1");
+    expect(packageJson.androidVersionCode).toBe(12);
     expect(packageJson.dependencies["@capacitor/core"]).toBe("8.5.2");
     expect(packageJson.dependencies["@capacitor/android"]).toBe("8.5.2");
     expect(capacitorConfig).toContain('appId: "com.octoteo.watersortsolver"');
@@ -62,15 +63,22 @@ describe("v0.9.0 Android native contract", () => {
     expect(pwaRegister).toContain("dispatchImageFile");
   });
 
+  it("blocks structurally unsafe recognized states before the search begins", () => {
+    expect(solverWorker).toContain('from "./puzzle-integrity"');
+    expect(solverWorker).toContain("assessPuzzleIntegrity(cups, locked, 4)");
+    expect(solverWorker).toContain("puzzleIntegrityReason(integrity)");
+    expect(solverWorker.indexOf("assessPuzzleIntegrity")).toBeLessThan(solverWorker.indexOf("solveWithLockedCups(cups"));
+  });
+
   it("keeps the MIUI-safe APK updater and China-first update mirror", () => {
     expect(mainActivity).toContain("registerPlugin(NativeUpdaterPlugin.class)");
     expect(updaterPlugin).toContain("Intent.ACTION_INSTALL_PACKAGE");
     expect(updaterPlugin).toContain("ClipData.newRawUri");
     expect(updaterPlugin).toContain("grantUriPermission");
     expect(updaterPlugin).toContain('MessageDigest.getInstance("SHA-256")');
-    expect(updateManifest.versionCode).toBe(11);
-    expect(updateManifest.versionName).toBe("0.9.0");
-    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.0/Water-Sort-Solver.apk");
+    expect(updateManifest.versionCode).toBe(12);
+    expect(updateManifest.versionName).toBe("0.9.1");
+    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.1/Water-Sort-Solver.apk");
     expect(updateManifest.apkSources[1].url).toBe("https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk");
     expect(generateManifestScript).toContain("releases/download/v${versionName}/Water-Sort-Solver.apk");
   });
