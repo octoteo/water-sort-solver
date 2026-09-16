@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Water Sort Solver maskable icon">
+  <rect width="512" height="512" fill="#0b1220"/>
+  <circle cx="256" cy="256" r="205" fill="#111827"/>
+  <path d="M171 119h170l-15 231c-3 47-42 84-89 84h38c-47 0-86-37-89-84z" fill="#0f172a" stroke="#e2e8f0" stroke-width="15" stroke-linejoin="round"/>
+  <path d="M190 194h132l-5 67H195z" fill="#8b5cf6"/>
+  <path d="M195 261h122l-5 66H200z" fill="#22c55e"/>
+  <path d="M200 327h112l-2 24c-2 29-26 52-55 52h2c-29 0-53-23-55-52z" fill="#0ea5e9"/>
+  <path d="M174 119h164" stroke="#fff" stroke-width="17" stroke-linecap="round"/>
+  <circle cx="363" cy="142" r="43" fill="#f59e0b"/>
+  <path d="M345 143l12 12 24-28" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
