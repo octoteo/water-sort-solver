@@ -27,7 +27,7 @@ const manifest = {
     { name: "GitHub 全球备用", url: githubApkUrl },
   ],
   sha256,
-  notes: `v${versionName}：增加识别结果完整性安全门。颜色层数异常、杯子超容量、无效颜色或广告杯索引异常时，在搜索前停止自动求解并指出优先核对的杯子；连续分屏求解、Gitee 中国镜像优先和 SHA-256 校验继续保留。`,
+  notes: `v${versionName}：修复 MIUI/小米安装器更新失败。APK 下载与 SHA-256 校验完成后改用 Android PackageInstaller.Session 写入和提交安装包，不再让 OEM 安装器读取应用 FileProvider；连续分屏求解与识别完整性安全门继续保留。`,
 };
 
 await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
