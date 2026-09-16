@@ -11,6 +11,7 @@ on:
       - "tests/**"
       - "native/android/**"
       - "scripts/prepare-android.mjs"
+      - "scripts/generate-update-manifest.mjs"
       - "capacitor.config.ts"
       - "next.config.ts"
       - "tsconfig.json"
@@ -101,11 +102,16 @@ jobs:
       - name: Stage rolling APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk Water-Sort-Solver.apk
 
+      - name: Generate signed update metadata
+        run: node scripts/generate-update-manifest.mjs Water-Sort-Solver.apk latest.json
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: water-sort-solver-android-debug
-          path: Water-Sort-Solver.apk
+          path: |
+            Water-Sort-Solver.apk
+            latest.json
           if-no-files-found: error
           retention-days: 14
 
@@ -113,9 +119,45 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION=$(node -p "require('./package.json').version")
           gh release delete android-latest --cleanup-tag -y || true
-          gh release create android-latest Water-Sort-Solver.apk \
+          gh release create android-latest Water-Sort-Solver.apk latest.json \
             --target "$GITHUB_SHA" \
-            --title "Water Sort Solver Android v0.7.0" \
-            --notes "Android rolling build. v0.7 adds automatic update checks and user-authorized split-screen capture for local recognition." \
+            --title "Water Sort Solver Android v${VERSION}" \
+            --notes "Android rolling build. v${VERSION} adds a China-friendly Gitee mirror with automatic GitHub fallback and SHA-256 verification." \
             --latest
+
+      - name: Publish China update mirror to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::notice::GITEE_TOKEN is not configured; Gitee mirror publish skipped."
+            exit 0
+          fi
+
+          VERSION=$(node -p "require('./package.json').version")
+          rm -rf gitee-mirror
+          mkdir gitee-mirror
+          cp Water-Sort-Solver.apk latest.json gitee-mirror/
+          cat > gitee-mirror/README.md <<EOF
+          # Water Sort Solver Android
+
+          本仓库仅用于 Water Sort Solver Android APK 的中国大陆下载镜像，不是源码仓库。
+
+          - 当前镜像版本：v${VERSION}
+          - APK：Water-Sort-Solver.apk
+          - 更新元数据：latest.json
+          - 源码：https://github.com/octoteo/water-sort-solver
+
+          APK 由 GitHub Actions 自动构建并同步；应用会校验 latest.json 中记录的 SHA-256。
+          EOF
+
+          cd gitee-mirror
+          git init --initial-branch=main
+          git config user.name "water-sort-solver-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add README.md Water-Sort-Solver.apk latest.json
+          git commit -m "release: Android v${VERSION}"
+          git remote add origin "https://octoteo:${GITEE_TOKEN}@gitee.com/octoteo/water-sort-solver-android.git"
+          git push --force origin HEAD:refs/heads/main
