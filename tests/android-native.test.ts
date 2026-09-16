@@ -18,10 +18,10 @@ const solverWorker = readFileSync(new URL("../lib/solver.worker.ts", import.meta
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
 
-describe("v0.9.4 Android native contract", () => {
+describe("v0.9.5 Android native contract", () => {
   it("bundles the static app into Capacitor 8 without a runtime server", () => {
-    expect(packageJson.version).toBe("0.9.4");
-    expect(packageJson.androidVersionCode).toBe(15);
+    expect(packageJson.version).toBe("0.9.5");
+    expect(packageJson.androidVersionCode).toBe(16);
     expect(packageJson.dependencies["@capacitor/core"]).toBe("8.5.2");
     expect(packageJson.dependencies["@capacitor/android"]).toBe("8.5.2");
     expect(capacitorConfig).toContain('appId: "com.octoteo.watersortsolver"');
@@ -110,9 +110,9 @@ describe("v0.9.4 Android native contract", () => {
   });
 
   it("keeps the China-first update mirror", () => {
-    expect(updateManifest.versionCode).toBe(15);
-    expect(updateManifest.versionName).toBe("0.9.4");
-    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.4/Water-Sort-Solver.apk");
+    expect(updateManifest.versionCode).toBe(16);
+    expect(updateManifest.versionName).toBe("0.9.5");
+    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.5/Water-Sort-Solver.apk");
     expect(updateManifest.apkSources[1].url).toBe("https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk");
     expect(generateManifestScript).toContain("releases/download/v${versionName}/Water-Sort-Solver.apk");
   });
