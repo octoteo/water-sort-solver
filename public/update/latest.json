@@ -1,11 +1,11 @@
 {
-  "versionCode": 10,
-  "versionName": "0.8.2",
-  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.8.2/Water-Sort-Solver.apk",
+  "versionCode": 11,
+  "versionName": "0.9.0",
+  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.0/Water-Sort-Solver.apk",
   "apkSources": [
     {
       "name": "Gitee 中国镜像",
-      "url": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.8.2/Water-Sort-Solver.apk"
+      "url": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.0/Water-Sort-Solver.apk"
     },
     {
       "name": "GitHub 全球备用",
@@ -13,5 +13,5 @@
     }
   ],
   "sha256": "",
-  "notes": "v0.8.2：修复部分小米/MIUI 安装器读取更新 APK 时的 FileProvider 权限问题；主页面新增手动“检查更新”，保留 Gitee 优先、GitHub 兜底和 SHA-256 校验。"
+  "notes": "v0.9.0：新增连续分屏求解会话。一次授权后可重复截取另一侧游戏窗口，截图后继续复用本地识别与 Web Worker 自动求解；主页面新增“开始分屏求解”，并可显式结束截图会话。"
 }
