@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { decode } from "jpeg-js";
 import { describe, expect, it } from "vitest";
+import { assessPuzzleIntegrity } from "../lib/puzzle-integrity";
 import { recognizeScreenshot } from "../lib/recognizer";
 
 function loadFixture() {
@@ -37,5 +38,6 @@ describe("real screenshot recognition", () => {
       for (const color of cup) counts.set(color, (counts.get(color) ?? 0) + 1);
     }
     expect([...counts.values()].sort((a, b) => a - b)).toEqual([4, 4, 4, 4, 4, 4, 4, 8]);
+    expect(assessPuzzleIntegrity(result.cups, result.locked).safe).toBe(true);
   });
 });
