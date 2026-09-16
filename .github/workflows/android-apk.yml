@@ -116,62 +116,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish rolling Android release
+      - name: Publish versioned GitHub Android release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -eu
           VERSION=$(node -p "require('./package.json').version")
-          gh release delete android-latest --cleanup-tag -y || true
-          gh release create android-latest Water-Sort-Solver.apk latest.json \
+          TAG="v${VERSION}"
+          EXPECTED_SHA=$(node -p "require('./latest.json').sha256")
+
+          gh release delete "$TAG" --cleanup-tag -y || true
+          gh release create "$TAG" Water-Sort-Solver.apk latest.json \
             --target "$GITHUB_SHA" \
             --title "Water Sort Solver Android v${VERSION}" \
-            --notes "Android rolling build. v${VERSION} adds a China-friendly Gitee mirror with automatic GitHub fallback and SHA-256 verification." \
+            --notes "Android release v${VERSION}. APK bytes are shared with the Gitee mirror and verified against the generated SHA-256." \
             --latest
+
+          rm -f github-apk.bin
+          gh release download "$TAG" -p Water-Sort-Solver.apk -O github-apk.bin
+          ACTUAL_SHA=$(sha256sum github-apk.bin | awk '{print $1}')
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          echo "Verified GitHub release ${TAG}, sha256=${ACTUAL_SHA}"
 
       - name: Publish China update mirror to Gitee OpenAPI
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: node scripts/publish-gitee-release.mjs
-
-      - name: Verify public Gitee update mirror
-        run: |
-          set -eu
-          LOCAL_VERSION=$(node -p "require('./package.json').version")
-          GITEE_APK="https://gitee.com/octoteo/water-sort-solver-android/releases/download/v${LOCAL_VERSION}/Water-Sort-Solver.apk"
-          EXPECTED_SHA=$(node -p "require('./latest.json').sha256")
-          VERIFIED=0
-
-          for BRANCH in main master; do
-            GITEE_META="https://gitee.com/octoteo/water-sort-solver-android/raw/${BRANCH}/latest.json"
-            for attempt in 1 2 3 4 5; do
-              rm -f gitee-latest.json gitee-apk.bin
-              if curl -fsSL --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 120 \
-                   -A "WaterSortSolver-Android/0.8" \
-                   -H "Accept: application/json,*/*" \
-                   -o gitee-latest.json "$GITEE_META" && \
-                 curl -fsSL --retry 2 --retry-delay 2 --connect-timeout 10 --max-time 180 \
-                   -A "WaterSortSolver-Android/0.8" \
-                   -H "Accept: application/vnd.android.package-archive,*/*" \
-                   -o gitee-apk.bin "$GITEE_APK"; then
-                REMOTE_SHA=$(sha256sum gitee-apk.bin | awk '{print $1}')
-                REMOTE_META_SHA=$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync('gitee-latest.json','utf8')).sha256 || '')")
-                REMOTE_VERSION=$(node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync('gitee-latest.json','utf8')).versionName || '')")
-                if [ "$REMOTE_SHA" = "$EXPECTED_SHA" ] && [ "$REMOTE_META_SHA" = "$EXPECTED_SHA" ] && [ "$REMOTE_VERSION" = "$LOCAL_VERSION" ]; then
-                  echo "Verified Gitee mirror v${LOCAL_VERSION} on branch ${BRANCH}, sha256=${EXPECTED_SHA}"
-                  VERIFIED=1
-                  break 2
-                fi
-                echo "::warning::Gitee mirror is reachable but has not converged yet (branch ${BRANCH}, attempt ${attempt}/5)."
-              else
-                echo "::warning::Gitee mirror download failed (branch ${BRANCH}, attempt ${attempt}/5)."
-              fi
-              sleep $((attempt * 5))
-            done
-          done
-
-          if [ "$VERIFIED" -ne 1 ]; then
-            echo "::error::Gitee mirror could not be verified after publishing."
-            exit 1
-          fi
 
 # Gitee OpenAPI is used because git smart-HTTP push from GitHub-hosted runners can time out.
