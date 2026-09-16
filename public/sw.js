@@ -1,4 +1,4 @@
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 const CORE_CACHE = `water-sort-core-${VERSION}`;
 const RUNTIME_CACHE = `water-sort-runtime-${VERSION}`;
 const SHARE_CACHE = "water-sort-shared-images-v1";
