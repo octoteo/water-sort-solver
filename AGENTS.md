@@ -26,6 +26,8 @@
 22. The PWA and APK must keep the same puzzle/recognizer/worker logic; native code should be a thin transport/runtime layer, not a second solver implementation.
 23. Native shared-image cache files must be deletable after handoff. The native bridge must not upload or log screenshot bytes remotely.
 24. Android build automation must produce an installable APK and run existing web regressions before Gradle packaging.
+25. Android self-update must never embed a Gitee/GitHub write credential in the APK. China distribution credentials belong only in GitHub Actions secrets; the installed app may access only public update artifacts.
+26. Android update delivery must prefer the public Gitee China mirror when available and automatically fall back to GitHub. Both mirrors must publish the exact same APK bytes, and generated update metadata must include a SHA-256 that is verified before opening the Android installer.
 
 ## Architecture
 
@@ -41,13 +43,15 @@
 - `capacitor.config.ts`: native app id/name and local `out/` bundle configuration.
 - `native/android/MainActivity.java`: Capacitor bridge activity and Android intent handoff.
 - `native/android/ShareReceiverPlugin.java`: local-only ACTION_SEND image receiver/Capacitor bridge.
+- `native/android/NativeUpdaterPlugin.java`: public-manifest update checker, Gitee/GitHub APK failover, checksum verification and Android package-installer handoff.
 - `scripts/prepare-android.mjs`: patches the generated Capacitor Android project with the native bridge and manifest intent filter.
-- `.github/workflows/android-apk.yml`: Android SDK/Capacitor/Gradle APK build and artifact upload.
+- `scripts/generate-update-manifest.mjs`: hashes the built APK and generates identical public update metadata for GitHub/Gitee distribution.
+- `.github/workflows/android-apk.yml`: Android SDK/Capacitor/Gradle APK build, GitHub rolling release and optional Gitee public mirror publish.
 - `tests/solver.test.ts`: replay/legal-move solver regressions.
 - `tests/recognizer.test.ts` + `tests/fixtures/`: real screenshot recognition regressions.
 - `tests/pwa.test.ts`: PWA manifest/privacy/share-target contract regressions.
 - `tests/mobile-execution.test.ts`: continuous-play, Wake Lock, local history and resume contracts.
-- `tests/android-native.test.ts`: Capacitor/offline/native-share/build contract regressions.
+- `tests/android-native.test.ts`: Capacitor/offline/native-share/build/update-mirror contract regressions.
 
 ## Definition of done for solver/search changes
 
@@ -94,4 +98,7 @@
 - The native plugin copies explicitly shared content into app-private cache and exposes it through Capacitor without broad storage permission.
 - The JS bridge sends that file through the same hidden image input used by the quick-solve workflow, then clears the pending native cache entry.
 - GitHub Actions runs `npm test`, builds the static web bundle, generates/syncs Capacitor Android, patches native files, and successfully runs Gradle APK assembly.
+- Update metadata points only to public artifacts; mirror credentials never enter the bundle or APK.
+- A built APK gets one SHA-256 and the exact same file is published to GitHub plus the optional Gitee China mirror.
+- Failure of Gitee must not remove the GitHub update fallback or break the offline solver.
 - Browser/PWA functionality remains intact after adding native dependencies.
