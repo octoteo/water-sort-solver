@@ -2,11 +2,12 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./v03.css";
 import "./v04.css";
+import "./v05.css";
 import PwaRegister from "./pwa-register";
 
 export const metadata: Metadata = {
   title: "Water Sort Solver",
-  description: "Offline-first Water Sort puzzle solver with local screenshot recognition, worker search, Android share target and visual execution guidance.",
+  description: "Offline-first Water Sort solver for Android screenshot sharing, local recognition, worker search and continuous mobile execution.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -25,6 +26,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#0b1220",
   colorScheme: "dark",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
