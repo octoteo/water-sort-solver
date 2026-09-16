@@ -15,14 +15,17 @@ if (!versionName || !Number.isInteger(versionCode) || versionCode <= 0) {
   throw new Error("package.json must define version and androidVersionCode");
 }
 
-const giteeApkUrl = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/Water-Sort-Solver.apk";
+// Gitee's Git smart-HTTP endpoint can be slow/unreachable from GitHub-hosted
+// runners. The China mirror is therefore published through Gitee OpenAPI as a
+// versioned Release attachment; the tiny latest.json stays in the repository.
+const giteeApkUrl = `https://gitee.com/octoteo/water-sort-solver-android/releases/download/v${versionName}/Water-Sort-Solver.apk`;
 const githubApkUrl = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk";
 
 const manifest = {
   versionCode,
   versionName,
-  // v0.7 only understands apkUrl. Point it at the China mirror so clients that
-  // can reach either legacy manifest endpoint do not need GitHub Releases for the APK.
+  // v0.7 only understands apkUrl. Keep this field pointed at Gitee so existing
+  // China users can make the one-time upgrade to the multi-source v0.8 client.
   apkUrl: giteeApkUrl,
   apkSources: [
     {
