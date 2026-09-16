@@ -21,21 +21,13 @@ const githubApkUrl = "https://github.com/octoteo/water-sort-solver/releases/down
 const manifest = {
   versionCode,
   versionName,
-  // v0.7 and v0.8.0 only understand apkUrl. Keep this field pointed at Gitee
-  // so existing China users can always discover the newest build.
   apkUrl: giteeApkUrl,
   apkSources: [
-    {
-      name: "Gitee 中国镜像",
-      url: giteeApkUrl,
-    },
-    {
-      name: "GitHub 全球备用",
-      url: githubApkUrl,
-    },
+    { name: "Gitee 中国镜像", url: giteeApkUrl },
+    { name: "GitHub 全球备用", url: githubApkUrl },
   ],
   sha256,
-  notes: `v${versionName}：修复部分小米/MIUI 安装器读取更新 APK 时的 FileProvider 权限问题；主页面新增手动“检查更新”，保留 Gitee 优先、GitHub 兜底和 SHA-256 校验。`,
+  notes: `v${versionName}：新增连续分屏求解会话，一次授权后可重复截取另一侧游戏窗口，并继续复用本地识别、Web Worker 自动求解、Gitee 中国镜像优先和 SHA-256 校验。`,
 };
 
 await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
