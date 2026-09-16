@@ -41,7 +41,8 @@ describe("v0.6 Android native contract", () => {
     expect(pwaRegister).toContain('registerPlugin<NativeShareReceiverPlugin>("ShareReceiver")');
     expect(pwaRegister).toContain("Capacitor.convertFileSrc");
     expect(pwaRegister).toContain("dispatchImageFile");
-    expect(pwaRegister).toContain('window.location.href = "/share?native=1"');
+    expect(pwaRegister).toContain('window.location.href = "/share.html?native=1"');
+    expect(pwaRegister).toContain('window.location.pathname === "/share.html"');
     expect(pwaRegister).toContain("clearPendingShare");
   });
 
