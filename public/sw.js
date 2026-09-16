@@ -3,7 +3,15 @@ const CORE_CACHE = `water-sort-core-${VERSION}`;
 const RUNTIME_CACHE = `water-sort-runtime-${VERSION}`;
 const SHARE_CACHE = "water-sort-shared-images-v1";
 const SHARE_TTL_MS = 30 * 60 * 1000;
-const CORE_ASSETS = ["/", "/manifest.webmanifest", "/icons/icon.svg", "/icons/maskable.svg"];
+const CORE_ASSETS = [
+  "/",
+  "/share",
+  "/manifest.webmanifest",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/maskable-512.png",
+  "/icons/icon.svg",
+];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -76,7 +84,7 @@ async function networkFirst(request) {
     if (response.ok) await cache.put(request, response.clone());
     return response;
   } catch {
-    return (await cache.match(request, { ignoreSearch: true })) || (await caches.match("/")) || new Response("Offline", { status: 503 });
+    return (await cache.match(request, { ignoreSearch: true })) || (await caches.match(request, { ignoreSearch: true })) || (await caches.match("/")) || new Response("Offline", { status: 503 });
   }
 }
 
