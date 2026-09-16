@@ -7,14 +7,22 @@ on:
     paths:
       - "app/**"
       - "lib/**"
+      - "public/**"
+      - "tests/**"
       - "native/android/**"
       - "scripts/prepare-android.mjs"
       - "capacitor.config.ts"
+      - "next.config.ts"
+      - "tsconfig.json"
       - "package.json"
       - ".github/workflows/android-apk.yml"
 
 permissions:
   contents: read
+
+concurrency:
+  group: android-apk-main
+  cancel-in-progress: true
 
 jobs:
   debug-apk:
