@@ -12,6 +12,7 @@ const capturePluginSource = resolve(root, "native/android/ScreenCapturePlugin.ja
 const captureServiceSource = resolve(root, "native/android/ScreenCaptureService.java");
 const updaterPluginSource = resolve(root, "native/android/NativeUpdaterPlugin.java");
 const installReceiverSource = resolve(root, "native/android/NativeInstallReceiver.java");
+const updateDiagnosticsSource = resolve(root, "native/android/UpdateDiagnostics.java");
 const iconSource = resolve(root, "public/icons/icon-512.png");
 const roundIconSource = resolve(root, "public/icons/maskable-512.png");
 const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
@@ -30,6 +31,7 @@ await copyFile(capturePluginSource, resolve(javaDir, "ScreenCapturePlugin.java")
 await copyFile(captureServiceSource, resolve(javaDir, "ScreenCaptureService.java"));
 await copyFile(updaterPluginSource, resolve(javaDir, "NativeUpdaterPlugin.java"));
 await copyFile(installReceiverSource, resolve(javaDir, "NativeInstallReceiver.java"));
+await copyFile(updateDiagnosticsSource, resolve(javaDir, "UpdateDiagnostics.java"));
 await copyFile(iconSource, resolve(drawableDir, "water_sort_icon.png"));
 await copyFile(roundIconSource, resolve(drawableDir, "water_sort_icon_round.png"));
 
@@ -91,4 +93,4 @@ appBuildGradle = appBuildGradle
   .replace(/versionName\s+"[^"]+"/, `versionName "${versionName}"`);
 await writeFile(appBuildGradlePath, appBuildGradle);
 
-console.log(`Prepared Capacitor Android shell: split-screen capture, PackageInstaller updater, ACTION_SEND, version ${versionName} (${versionCode}).`);
+console.log(`Prepared Capacitor Android shell: split-screen capture, PackageInstaller updater diagnostics, ACTION_SEND, version ${versionName} (${versionCode}).`);
