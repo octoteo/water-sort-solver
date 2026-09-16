@@ -81,7 +81,7 @@ export function assessPuzzleIntegrity(cups: Cup[], locked: number[] = [], capaci
 
 export function puzzleIntegrityReason(report: PuzzleIntegrityReport) {
   if (report.safe) return "";
-  const first = report.issues[0]?.message ?? "识别结果未通过完整性检查，请重新截图。";
-  if (report.issues.length === 1) return first;
-  return `${first} 另有 ${report.issues.length - 1} 项完整性异常。`;
+  const messages = report.issues.slice(0, 3).map((issue) => issue.message);
+  if (report.issues.length > 3) messages.push(`另有 ${report.issues.length - 3} 项完整性异常。`);
+  return messages.join("；");
 }
