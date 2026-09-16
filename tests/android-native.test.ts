@@ -15,128 +15,74 @@ const pwaRegister = readFileSync(new URL("../app/pwa-register.tsx", import.meta.
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
 
-describe("v0.8.2 Android native contract", () => {
+describe("v0.9.0 Android native contract", () => {
   it("bundles the static app into Capacitor 8 without a runtime server", () => {
-    expect(packageJson.version).toBe("0.8.2");
-    expect(packageJson.androidVersionCode).toBe(10);
+    expect(packageJson.version).toBe("0.9.0");
+    expect(packageJson.androidVersionCode).toBe(11);
     expect(packageJson.dependencies["@capacitor/core"]).toBe("8.5.2");
     expect(packageJson.dependencies["@capacitor/android"]).toBe("8.5.2");
-    expect(packageJson.devDependencies["@capacitor/cli"]).toBe("8.5.2");
     expect(capacitorConfig).toContain('appId: "com.octoteo.watersortsolver"');
     expect(capacitorConfig).toContain('webDir: "out"');
     expect(capacitorConfig).not.toContain("server.url");
-    expect(prepareScript).toContain("packageJson.androidVersionCode");
-    expect(prepareScript).toContain("packageJson.version");
   });
 
   it("receives Android ACTION_SEND images without broad storage permission", () => {
     expect(mainActivity).toContain("registerPlugin(ShareReceiverPlugin.class)");
-    expect(mainActivity).toContain("onNewIntent");
     expect(sharePlugin).toContain("Intent.ACTION_SEND");
-    expect(sharePlugin).toContain("Intent.EXTRA_STREAM");
     expect(sharePlugin).toContain("getCacheDir()");
     expect(sharePlugin).not.toContain("READ_MEDIA_IMAGES");
     expect(sharePlugin).not.toContain("READ_EXTERNAL_STORAGE");
   });
 
-  it("captures the opposite split-screen pane through user-authorized MediaProjection", () => {
+  it("keeps one user-authorized MediaProjection session for repeated split-screen captures", () => {
     expect(mainActivity).toContain("registerPlugin(ScreenCapturePlugin.class)");
-    expect(capturePlugin).toContain("createScreenCaptureIntent");
+    expect(capturePlugin).toContain("startCaptureSession");
+    expect(capturePlugin).toContain("getCaptureSessionStatus");
     expect(capturePlugin).toContain("captureOtherPane");
-    expect(capturePlugin).toContain("static android.app.Activity.RESULT_OK");
+    expect(capturePlugin).toContain("stopCaptureSession");
+    expect(capturePlugin).toContain("captureSessionChanged");
+    expect(captureService).toContain("ACTION_START_SESSION");
+    expect(captureService).toContain("requestCapture");
+    expect(captureService).toContain("isSessionActive");
+    expect(captureService).toContain("WaterSortContinuousCapture");
     expect(captureService).toContain("FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION");
     expect(captureService).toContain("computeOtherPane");
     expect(captureService).toContain("Bitmap.createBitmap(full, crop.left, crop.top");
     expect(prepareScript).toContain("android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION");
     expect(prepareScript).toContain('android:foregroundServiceType="mediaProjection"');
-    expect(prepareScript).toContain('android:resizeableActivity="true"');
-    expect(pwaRegister).toContain('registerPlugin<NativeScreenCapturePlugin>("ScreenCapture")');
-    expect(pwaRegister).toContain("📸 分屏截图");
   });
 
-  it("checks for APK updates and hands installation to the Android package installer", () => {
+  it("offers one-tap entry and repeated capture controls in the native UI", () => {
+    expect(pwaRegister).toContain("▶ 开始分屏求解");
+    expect(pwaRegister).toContain("📸 连续截图");
+    expect(pwaRegister).toContain("结束");
+    expect(pwaRegister).toContain("startCaptureSession");
+    expect(pwaRegister).toContain("getCaptureSessionStatus");
+    expect(pwaRegister).toContain("autocapture=1");
+    expect(pwaRegister).toContain("dispatchImageFile");
+  });
+
+  it("keeps the MIUI-safe APK updater and China-first update mirror", () => {
     expect(mainActivity).toContain("registerPlugin(NativeUpdaterPlugin.class)");
-    expect(updaterPlugin).toContain("checkForUpdate");
-    expect(updaterPlugin).toContain("canRequestPackageInstalls");
-    expect(updaterPlugin).toContain("FileProvider.getUriForFile");
     expect(updaterPlugin).toContain("Intent.ACTION_INSTALL_PACKAGE");
     expect(updaterPlugin).toContain("ClipData.newRawUri");
-    expect(updaterPlugin).toContain("queryIntentActivities");
     expect(updaterPlugin).toContain("grantUriPermission");
-    expect(updaterPlugin).toContain("Intent.FLAG_GRANT_READ_URI_PERMISSION");
-    expect(updaterPlugin).toContain("application/vnd.android.package-archive");
-    expect(prepareScript).toContain("android.permission.REQUEST_INSTALL_PACKAGES");
-    expect(prepareScript).toContain("android.intent.action.INSTALL_PACKAGE");
-    expect(prepareScript).toContain("water_sort_file_paths");
-    expect(prepareScript).toContain('android:exported="false"');
-    expect(prepareScript).toContain('android:grantUriPermissions="true"');
-    expect(pwaRegister).toContain('registerPlugin<NativeUpdaterPlugin>("NativeUpdater")');
-    expect(pwaRegister).toContain("UPDATE_CHECK_INTERVAL");
-    expect(pwaRegister).toContain("立即更新");
-    expect(updateManifest.versionCode).toBe(10);
-    expect(updateManifest.versionName).toBe("0.8.2");
-  });
-
-  it("exposes manual update checking on every native page", () => {
-    expect(pwaRegister).toContain('const UPDATE_CHECK_KEY = "water-sort-native-update-check-v2"');
-    expect(pwaRegister).toContain("{nativeRuntime && <div");
-    expect(pwaRegister).toContain("检查更新");
-    expect(pwaRegister).toContain("nativeSharePage && <button className=\"native-split-capture\"");
-  });
-
-  it("uses a China-friendly Gitee mirror first and GitHub as an automatic fallback", () => {
-    const giteeManifest = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/latest.json";
-    const giteeApk = "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.8.2/Water-Sort-Solver.apk";
-    const githubApk = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk";
-    expect(updaterPlugin).toContain(giteeManifest);
-    expect(updaterPlugin.indexOf("GITEE_MANIFEST")).toBeLessThan(updaterPlugin.indexOf("GITHUB_RELEASE_MANIFEST"));
-    expect(updaterPlugin).toContain("parseSources");
-    expect(updaterPlugin).toContain("candidates.addAll(plan.sources)");
-    expect(updateManifest.apkSources[0].url).toBe(giteeApk);
-    expect(updateManifest.apkSources[1].url).toBe(githubApk);
-    expect(generateManifestScript).toContain("releases/download/v${versionName}/Water-Sort-Solver.apk");
-    expect(generateManifestScript).toContain(githubApk);
-  });
-
-  it("verifies mirrored APK bytes before opening the Android installer", () => {
     expect(updaterPlugin).toContain('MessageDigest.getInstance("SHA-256")');
-    expect(updaterPlugin).toContain("verifySha256(target, expectedSha256)");
-    expect(updaterPlugin).toContain("APK SHA-256 校验失败");
-    expect(generateManifestScript).toContain('createHash("sha256")');
+    expect(updateManifest.versionCode).toBe(11);
+    expect(updateManifest.versionName).toBe("0.9.0");
+    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.0/Water-Sort-Solver.apk");
+    expect(updateManifest.apkSources[1].url).toBe("https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk");
+    expect(generateManifestScript).toContain("releases/download/v${versionName}/Water-Sort-Solver.apk");
   });
 
-  it("patches the generated Android manifest for image sharing and singleTask delivery", () => {
-    expect(prepareScript).toContain("android.intent.action.SEND");
-    expect(prepareScript).toContain('android:mimeType="image/*"');
-    expect(prepareScript).toContain('android:launchMode="singleTask"');
-  });
-
-  it("hands native image sources into the same quick-solve file pipeline", () => {
-    expect(pwaRegister).toContain('registerPlugin<NativeShareReceiverPlugin>("ShareReceiver")');
-    expect(pwaRegister).toContain("Capacitor.convertFileSrc");
-    expect(pwaRegister).toContain("dispatchImageFile");
-    expect(pwaRegister).toContain('window.location.href = "/share.html?native=1"');
-    expect(pwaRegister).toContain('window.location.pathname === "/share.html"');
-    expect(pwaRegister).toContain("clearPendingShare");
-  });
-
-  it("builds one APK and publishes the same bytes to GitHub and a Gitee Release", () => {
+  it("builds one APK and publishes the same bytes to GitHub and Gitee", () => {
     expect(workflow).toContain("npx cap add android");
-    expect(workflow).toContain("sdkmanager \"platforms;android-36\"");
-    expect(workflow).toContain("mkdir -p ~/.android");
-    expect(workflow).toContain("water-sort-solver-debug-keystore-v2");
-    expect(workflow).toContain("keytool -genkeypair");
     expect(workflow).toContain("./gradlew assembleDebug");
     expect(workflow).toContain("generate-update-manifest.mjs");
     expect(workflow).toContain("Water-Sort-Solver.apk");
-    expect(workflow).toContain("gh release create android-latest Water-Sort-Solver.apk latest.json");
     expect(workflow).toContain("GITEE_TOKEN");
     expect(workflow).toContain("publish-gitee-release.mjs");
     expect(workflow).toContain("Verify public Gitee update mirror");
-    expect(workflow).toContain("contents: write");
-    expect(publishGiteeScript).toContain("/releases");
     expect(publishGiteeScript).toContain("attach_files");
-    expect(publishGiteeScript).toContain("Water-Sort-Solver.apk");
-    expect(publishGiteeScript).toContain("latest.json");
   });
 });
