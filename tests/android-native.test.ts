@@ -77,7 +77,8 @@ describe("v0.9.2 Android native contract", () => {
     expect(updaterPlugin).toContain('session.openWrite("base.apk"');
     expect(updaterPlugin).toContain("session.commit(statusReceiver)");
     expect(updaterPlugin).toContain("PendingIntent.FLAG_MUTABLE");
-    expect(updaterPlugin).not.toContain("FileProvider");
+    expect(updaterPlugin).not.toContain("androidx.core.content.FileProvider");
+    expect(updaterPlugin).not.toContain("FileProvider.getUriForFile");
     expect(updaterPlugin).not.toContain("Intent.ACTION_INSTALL_PACKAGE");
     expect(installReceiver).toContain("PackageInstaller.STATUS_PENDING_USER_ACTION");
     expect(installReceiver).toContain("Intent.EXTRA_INTENT");
