@@ -29,6 +29,10 @@ function isNativeApp() {
   return Capacitor.isNativePlatform();
 }
 
+function isNativeSharePage() {
+  return window.location.pathname === "/share" || window.location.pathname === "/share.html";
+}
+
 function isStandalone() {
   if (typeof window === "undefined") return false;
   if (isNativeApp()) return true;
@@ -117,8 +121,10 @@ export default function PwaRegister() {
         const payload = supplied?.uri ? supplied : await NativeShareReceiver.getPendingShare();
         if (!payload.uri || cancelled) return;
 
-        if (window.location.pathname !== "/share") {
-          window.location.href = "/share?native=1";
+        if (!isNativeSharePage()) {
+          // Next static export emits out/share.html. Using that exact file keeps
+          // the native APK independent of clean-URL behavior from any web host.
+          window.location.href = "/share.html?native=1";
           return;
         }
 
