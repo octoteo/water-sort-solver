@@ -19,7 +19,6 @@ public class NativeInstallReceiver extends BroadcastReceiver {
         if (intent == null || !ACTION_INSTALL_STATUS.equals(intent.getAction())) return;
 
         int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
-        int legacyStatus = intent.getIntExtra(PackageInstaller.EXTRA_LEGACY_STATUS, Integer.MIN_VALUE);
         int sessionId = intent.getIntExtra(EXTRA_SESSION_ID, -1);
         String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
         String otherPackage = intent.getStringExtra(PackageInstaller.EXTRA_OTHER_PACKAGE_NAME);
@@ -27,7 +26,6 @@ public class NativeInstallReceiver extends BroadcastReceiver {
         JSONObject callback = new JSONObject();
         try {
             callback.put("status", status);
-            callback.put("legacyStatus", legacyStatus);
             callback.put("sessionId", sessionId);
             callback.put("statusMessage", message == null ? "" : message);
             callback.put("otherPackageName", otherPackage == null ? "" : otherPackage);
