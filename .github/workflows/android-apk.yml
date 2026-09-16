@@ -68,11 +68,29 @@ jobs:
           npx cap sync android
           node scripts/prepare-android.mjs
 
-      - name: Keep beta signing key between builds
+      - name: Prepare beta signing directory
+        run: mkdir -p ~/.android
+
+      - name: Restore beta signing key
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
-          key: water-sort-solver-debug-keystore-v1
+          key: water-sort-solver-debug-keystore-v2
+
+      - name: Create beta signing key when absent
+        run: |
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Water Sort Solver Beta,O=octoteo,C=CN"
+          fi
+          keytool -list -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey
 
       - name: Build installable APK
         working-directory: android
