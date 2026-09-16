@@ -9,6 +9,7 @@ const capturePlugin = readFileSync(new URL("../native/android/ScreenCapturePlugi
 const captureService = readFileSync(new URL("../native/android/ScreenCaptureService.java", import.meta.url), "utf8");
 const updaterPlugin = readFileSync(new URL("../native/android/NativeUpdaterPlugin.java", import.meta.url), "utf8");
 const installReceiver = readFileSync(new URL("../native/android/NativeInstallReceiver.java", import.meta.url), "utf8");
+const updateDiagnostics = readFileSync(new URL("../native/android/UpdateDiagnostics.java", import.meta.url), "utf8");
 const prepareScript = readFileSync(new URL("../scripts/prepare-android.mjs", import.meta.url), "utf8");
 const generateManifestScript = readFileSync(new URL("../scripts/generate-update-manifest.mjs", import.meta.url), "utf8");
 const publishGiteeScript = readFileSync(new URL("../scripts/publish-gitee-release.mjs", import.meta.url), "utf8");
@@ -17,10 +18,10 @@ const solverWorker = readFileSync(new URL("../lib/solver.worker.ts", import.meta
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
 
-describe("v0.9.3 Android native contract", () => {
+describe("v0.9.4 Android native contract", () => {
   it("bundles the static app into Capacitor 8 without a runtime server", () => {
-    expect(packageJson.version).toBe("0.9.3");
-    expect(packageJson.androidVersionCode).toBe(14);
+    expect(packageJson.version).toBe("0.9.4");
+    expect(packageJson.androidVersionCode).toBe(15);
     expect(packageJson.dependencies["@capacitor/core"]).toBe("8.5.2");
     expect(packageJson.dependencies["@capacitor/android"]).toBe("8.5.2");
     expect(capacitorConfig).toContain('appId: "com.octoteo.watersortsolver"');
@@ -88,10 +89,30 @@ describe("v0.9.3 Android native contract", () => {
     expect(updaterPlugin).toContain('MessageDigest.getInstance("SHA-256")');
   });
 
+  it("persists a local updater trace that can diagnose OEM installer failures", () => {
+    expect(prepareScript).toContain("UpdateDiagnostics.java");
+    expect(updateDiagnostics).toContain('PREFS = "water_sort_update_diagnostics"');
+    expect(updateDiagnostics).toContain("getMySessions()");
+    expect(updateDiagnostics).toContain('getProp("ro.miui.ui.version.name")');
+    expect(updateDiagnostics).toContain('getProp("ro.mi.os.version.name")');
+    expect(updaterPlugin).toContain("getUpdateDiagnostics");
+    expect(updaterPlugin).toContain("clearUpdateDiagnostics");
+    expect(updaterPlugin).toContain('"network.apk.response"');
+    expect(updaterPlugin).toContain('"download.sha256"');
+    expect(updaterPlugin).toContain('"apk.preflight"');
+    expect(updaterPlugin).toContain('"session.commit.called"');
+    expect(installReceiver).toContain('"receiver.status"');
+    expect(installReceiver).toContain('"receiver.confirmation.launch.failure"');
+    expect(mainActivity).toContain('"activity.resume"');
+    expect(pwaRegister).toContain("更新诊断");
+    expect(pwaRegister).toContain("复制诊断信息");
+    expect(pwaRegister).toContain("不会自动上传");
+  });
+
   it("keeps the China-first update mirror", () => {
-    expect(updateManifest.versionCode).toBe(14);
-    expect(updateManifest.versionName).toBe("0.9.3");
-    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.3/Water-Sort-Solver.apk");
+    expect(updateManifest.versionCode).toBe(15);
+    expect(updateManifest.versionName).toBe("0.9.4");
+    expect(updateManifest.apkSources[0].url).toBe("https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.4/Water-Sort-Solver.apk");
     expect(updateManifest.apkSources[1].url).toBe("https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk");
     expect(generateManifestScript).toContain("releases/download/v${versionName}/Water-Sort-Solver.apk");
   });
