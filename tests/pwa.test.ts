@@ -13,7 +13,9 @@ describe("PWA contract", () => {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     expect(manifest.display).toBe("standalone");
     expect(manifest.start_url).toBe("/");
-    expect(manifest.icons).toHaveLength(2);
+    expect(manifest.icons.some((icon: { sizes: string; type: string }) => icon.sizes === "192x192" && icon.type === "image/png")).toBe(true);
+    expect(manifest.icons.some((icon: { sizes: string; type: string }) => icon.sizes === "512x512" && icon.type === "image/png")).toBe(true);
+    expect(manifest.icons.some((icon: { purpose?: string }) => icon.purpose === "maskable")).toBe(true);
     expect(manifest.share_target).toMatchObject({
       action: "/share-target",
       method: "POST",
@@ -37,10 +39,13 @@ describe("PWA contract", () => {
     expect(shareHandler).not.toContain("fetch(");
   });
 
-  it("keeps shared images short-lived and explicitly deletable", () => {
+  it("keeps shared images short-lived, deletable and makes the share page available offline", () => {
     const source = readServiceWorker();
     expect(source).toContain("SHARE_TTL_MS = 30 * 60 * 1000");
     expect(source).toContain('data.type !== "delete-shared"');
     expect(source).toContain("cleanupSharedCache");
+    expect(source).toContain('"/share"');
+    expect(source).toContain('"/icons/icon-192.png"');
+    expect(source).toContain('"/icons/icon-512.png"');
   });
 });
