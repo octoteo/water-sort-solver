@@ -27,7 +27,7 @@ const manifest = {
     { name: "GitHub 全球备用", url: githubApkUrl },
   ],
   sha256,
-  notes: `v${versionName}：新增连续分屏求解会话，一次授权后可重复截取另一侧游戏窗口，并继续复用本地识别、Web Worker 自动求解、Gitee 中国镜像优先和 SHA-256 校验。`,
+  notes: `v${versionName}：增加识别结果完整性安全门。颜色层数异常、杯子超容量、无效颜色或广告杯索引异常时，在搜索前停止自动求解并指出优先核对的杯子；连续分屏求解、Gitee 中国镜像优先和 SHA-256 校验继续保留。`,
 };
 
 await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
