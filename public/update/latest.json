@@ -1,11 +1,11 @@
 {
-  "versionCode": 15,
-  "versionName": "0.9.4",
-  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.4/Water-Sort-Solver.apk",
+  "versionCode": 16,
+  "versionName": "0.9.5",
+  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.5/Water-Sort-Solver.apk",
   "apkSources": [
     {
       "name": "Gitee 中国镜像",
-      "url": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.4/Water-Sort-Solver.apk"
+      "url": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.5/Water-Sort-Solver.apk"
     },
     {
       "name": "GitHub 全球备用",
@@ -13,5 +13,5 @@
     }
   ],
   "sha256": "",
-  "notes": "v0.9.4：新增本机更新诊断中心。完整记录更新清单、下载源、HTTP 响应、APK SHA-256、包名/版本/签名预检、PackageInstaller Session、系统安装回调与确认页启动结果，并可一键复制诊断报告；诊断数据默认只保存在本机。"
+  "notes": "v0.9.5：用于真机验证更新可观测链路。v0.9.4 起会在本机记录更新清单、下载 HTTP 响应、APK SHA-256、包名/版本/签名预检、PackageInstaller Session、系统回调和确认页启动结果，可一键复制诊断报告定位 MIUI/HyperOS 根因。"
 }
