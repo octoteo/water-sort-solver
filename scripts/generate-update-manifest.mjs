@@ -27,7 +27,7 @@ const manifest = {
     { name: "GitHub 全球备用", url: githubApkUrl },
   ],
   sha256,
-  notes: `v${versionName}：MIUI 真机自动更新验证版本。继续使用 Android PackageInstaller.Session 安装链路，不再通过 FileProvider 交付 APK；用于验证上一版本可直接在应用内下载并覆盖更新。`,
+  notes: `v${versionName}：新增本机更新诊断中心。记录更新清单与下载 HTTP 响应、APK SHA-256、包名/版本/签名预检、PackageInstaller Session、系统安装回调以及确认页启动结果；诊断信息默认只保存在本机，可一键复制用于定位 MIUI/HyperOS 更新失败根因。`,
 };
 
 await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
