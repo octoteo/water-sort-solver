@@ -9,6 +9,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ShareReceiverPlugin.class);
+        registerPlugin(ScreenCapturePlugin.class);
+        registerPlugin(NativeUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
         ShareReceiverPlugin.captureIntent(this, getIntent());
     }
