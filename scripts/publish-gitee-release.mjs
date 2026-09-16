@@ -110,6 +110,8 @@ if (!release || !release.id) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       access_token: token,
+      tag_name: tag,
+      target_commitish: branch,
       name: `Water Sort Solver Android v${version}`,
       body: `中国大陆 APK 更新镜像，版本 v${version}。`,
       prerelease: false,
@@ -148,8 +150,6 @@ async function upload(name, bytes, type) {
       throw new Error(`Gitee upload of ${name} returned no asset id`);
     } catch (error) {
       lastError = error;
-      // The server can finish storing an attachment after the client times out.
-      // Before retrying, query the release and accept an already-visible asset.
       try {
         const existing = (await listAssets()).find((asset) => asset?.name === name);
         if (existing?.id) return existing;
