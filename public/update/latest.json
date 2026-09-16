@@ -1,0 +1,6 @@
+{
+  "versionCode": 7,
+  "versionName": "0.7.0",
+  "apkUrl": "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk",
+  "notes": "v0.7：APK 自动检查更新；支持 Android 分屏内一键截取另一侧游戏画面并直接识别求解。"
+}
