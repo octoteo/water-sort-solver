@@ -3,9 +3,8 @@ const CORE_CACHE = `water-sort-core-${VERSION}`;
 const RUNTIME_CACHE = `water-sort-runtime-${VERSION}`;
 const SHARE_CACHE = "water-sort-shared-images-v1";
 const SHARE_TTL_MS = 30 * 60 * 1000;
+const PAGE_SHELLS = ["/", "/share"];
 const CORE_ASSETS = [
-  "/",
-  "/share",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -13,9 +12,37 @@ const CORE_ASSETS = [
   "/icons/icon.svg",
 ];
 
+async function precacheAppShell() {
+  const cache = await caches.open(CORE_CACHE);
+  const discoveredAssets = new Set(CORE_ASSETS);
+
+  for (const path of PAGE_SHELLS) {
+    try {
+      const response = await fetch(path, { cache: "reload" });
+      if (!response.ok) continue;
+      await cache.put(path, response.clone());
+      const html = await response.text();
+      for (const match of html.matchAll(/(?:src|href)="(\/_next\/static\/[^\"]+)"/g)) {
+        discoveredAssets.add(match[1].replaceAll("&amp;", "&"));
+      }
+    } catch {
+      // Installation should remain usable even if one optional page shell fails.
+    }
+  }
+
+  await Promise.all([...discoveredAssets].map(async (asset) => {
+    try {
+      const response = await fetch(asset, { cache: "reload" });
+      if (response.ok) await cache.put(asset, response);
+    } catch {
+      // Runtime caching can recover assets later when the network is available.
+    }
+  }));
+}
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CORE_CACHE).then((cache) => cache.addAll(CORE_ASSETS)));
+  event.waitUntil(precacheAppShell());
 });
 
 self.addEventListener("activate", (event) => {
