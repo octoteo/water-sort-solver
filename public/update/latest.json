@@ -1,7 +1,7 @@
 {
   "versionCode": 8,
   "versionName": "0.8.0",
-  "apkUrl": "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk",
+  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/raw/main/Water-Sort-Solver.apk",
   "apkSources": [
     {
       "name": "Gitee 中国镜像",
