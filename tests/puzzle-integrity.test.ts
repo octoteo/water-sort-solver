@@ -23,7 +23,7 @@ describe("puzzle integrity safety gate", () => {
     ]);
     expect(report.safe).toBe(false);
     const issue = report.issues.find((item) => item.code === "color-count");
-    expect(issue?.color).toBe(1);
+    expect(issue?.color).toBe(0);
     expect(issue?.count).toBe(3);
     expect(issue?.cupIndices).toEqual([0, 1]);
     expect(puzzleIntegrityReason(report)).toContain("杯 1、2");
