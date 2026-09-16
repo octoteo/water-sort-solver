@@ -19,9 +19,11 @@ const headers = {
   "User-Agent": "water-sort-solver-release-bot/0.8",
 };
 
-async function request(url, options = {}, allowed = []) {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function request(url, options = {}, allowed = [], timeoutMs = 60_000) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       ...options,
@@ -70,8 +72,6 @@ async function writeFile(path, text, branch) {
 let repoInfo = await getRepo();
 let branch = repoInfo.default_branch || "main";
 
-// Seed an empty repository using its default branch semantics. If the repo is
-// already initialized this simply updates README.md.
 try {
   await writeFile("README.md", readme, branch);
 } catch (error) {
@@ -86,13 +86,9 @@ repoInfo = await getRepo();
 branch = repoInfo.default_branch || branch || "main";
 await writeFile("latest.json", manifestText, branch);
 
-// Gitee may answer a missing tag lookup with HTTP 200 and a JSON null body
-// instead of HTTP 404. Treat both cases as "release does not exist".
 let release = null;
 const releaseResponse = await request(`${api}/releases/tags/${encodeURIComponent(tag)}`, {}, [404]);
-if (releaseResponse.status !== 404) {
-  release = await releaseResponse.json();
-}
+if (releaseResponse.status !== 404) release = await releaseResponse.json();
 
 if (!release || !release.id) {
   const create = await request(`${api}/releases`, {
@@ -122,27 +118,51 @@ if (!release || !release.id) {
   release = await patch.json();
 }
 
-if (!release || !release.id) {
-  throw new Error(`Gitee Release ${tag} was not created or returned without an id`);
+if (!release || !release.id) throw new Error(`Gitee Release ${tag} was not created or returned without an id`);
+
+async function listAssets() {
+  const response = await request(`${api}/releases/${release.id}/attach_files`);
+  const items = await response.json();
+  return Array.isArray(items) ? items : [];
 }
 
-const assetsResponse = await request(`${api}/releases/${release.id}/attach_files`);
-const assets = await assetsResponse.json();
-for (const asset of Array.isArray(assets) ? assets : []) {
+for (const asset of await listAssets()) {
   if (asset?.name === "Water-Sort-Solver.apk" || asset?.name === "latest.json") {
     await request(`${api}/releases/${release.id}/attach_files/${asset.id}`, { method: "DELETE" });
   }
 }
 
 async function upload(name, bytes, type) {
-  const form = new FormData();
-  form.append("access_token", token);
-  form.append("file", new Blob([bytes], { type }), name);
-  const response = await request(`${api}/releases/${release.id}/attach_files`, {
-    method: "POST",
-    body: form,
-  });
-  return response.json();
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const form = new FormData();
+    form.append("access_token", token);
+    form.append("file", new Blob([bytes], { type }), name);
+    try {
+      const response = await request(`${api}/releases/${release.id}/attach_files`, {
+        method: "POST",
+        body: form,
+      }, [], 300_000);
+      const asset = await response.json();
+      if (asset?.id) return asset;
+      throw new Error(`Gitee upload of ${name} returned no asset id`);
+    } catch (error) {
+      lastError = error;
+      // The server can finish storing an attachment after the client times out.
+      // Before retrying, query the release and accept an already-visible asset.
+      try {
+        const existing = (await listAssets()).find((asset) => asset?.name === name);
+        if (existing?.id) return existing;
+      } catch {
+        // Preserve the original upload error and retry below.
+      }
+      if (attempt < 3) {
+        console.warn(`Gitee upload ${name} attempt ${attempt}/3 failed; retrying...`);
+        await sleep(attempt * 5_000);
+      }
+    }
+  }
+  throw lastError;
 }
 
 const apkAsset = await upload("Water-Sort-Solver.apk", apk, "application/vnd.android.package-archive");
