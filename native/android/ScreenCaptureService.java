@@ -32,24 +32,31 @@ import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
 
 public class ScreenCaptureService extends Service {
+    static final String ACTION_START_SESSION = "com.octoteo.watersortsolver.START_CAPTURE_SESSION";
     static final String EXTRA_RESULT_CODE = "resultCode";
     static final String EXTRA_RESULT_DATA = "resultData";
-    static final String EXTRA_APP_LEFT = "appLeft";
-    static final String EXTRA_APP_TOP = "appTop";
-    static final String EXTRA_APP_RIGHT = "appRight";
-    static final String EXTRA_APP_BOTTOM = "appBottom";
     static final String EXTRA_CALLBACK_ID = "callbackId";
 
     private static final String CHANNEL_ID = "water-sort-screen-capture";
     private static final int NOTIFICATION_ID = 7021;
+    private static volatile ScreenCaptureService activeService;
 
     private MediaProjection projection;
     private VirtualDisplay virtualDisplay;
     private ImageReader imageReader;
     private HandlerThread captureThread;
     private Handler captureHandler;
-    private boolean completed;
-    private String callbackId;
+    private int screenWidth;
+    private int screenHeight;
+    private boolean destroying;
+    private String pendingCaptureCallbackId;
+    private Rect pendingAppBounds;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        activeService = this;
+    }
 
     @Nullable
     @Override
@@ -57,19 +64,46 @@ public class ScreenCaptureService extends Service {
         return null;
     }
 
+    static boolean isSessionActive() {
+        ScreenCaptureService service = activeService;
+        return service != null && service.projection != null && service.virtualDisplay != null && service.captureHandler != null && !service.destroying;
+    }
+
+    static boolean requestCapture(String callbackId, Rect appBounds) {
+        ScreenCaptureService service = activeService;
+        if (service == null || callbackId == null || appBounds == null || !isSessionActive()) return false;
+        Handler handler = service.captureHandler;
+        if (handler == null) return false;
+        handler.post(() -> service.queueCapture(callbackId, new Rect(appBounds)));
+        return true;
+    }
+
+    static void stopSession() {
+        ScreenCaptureService service = activeService;
+        if (service == null) return;
+        Handler handler = service.captureHandler;
+        if (handler != null) handler.post(() -> service.finishSession("用户已结束连续分屏截图", true));
+        else service.stopSelf();
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) {
+        if (intent == null || !ACTION_START_SESSION.equals(intent.getAction())) {
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        callbackId = intent.getStringExtra(EXTRA_CALLBACK_ID);
+        String startCallbackId = intent.getStringExtra(EXTRA_CALLBACK_ID);
+        if (isSessionActive()) {
+            ScreenCapturePlugin.completeSessionStart(startCallbackId);
+            return START_NOT_STICKY;
+        }
+
         createChannel();
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setContentTitle("Water Sort 分屏截图")
-            .setContentText("正在读取另一侧游戏画面，仅在本机处理")
+            .setContentTitle("Water Sort 连续分屏求解")
+            .setContentText("截图会话已开启；游戏画面仅在本机处理")
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build();
@@ -88,31 +122,23 @@ public class ScreenCaptureService extends Service {
             resultData = intent.getParcelableExtra(EXTRA_RESULT_DATA);
         }
         if (resultData == null) {
-            fail("没有收到 Android 截屏授权数据，请重试。");
+            failStart(startCallbackId, "没有收到 Android 截屏授权数据，请重试。");
             return START_NOT_STICKY;
         }
 
-        Rect appBounds = new Rect(
-            intent.getIntExtra(EXTRA_APP_LEFT, 0),
-            intent.getIntExtra(EXTRA_APP_TOP, 0),
-            intent.getIntExtra(EXTRA_APP_RIGHT, 0),
-            intent.getIntExtra(EXTRA_APP_BOTTOM, 0)
-        );
-
         try {
-            startProjection(resultCode, resultData, appBounds);
+            startProjection(resultCode, resultData);
+            ScreenCapturePlugin.completeSessionStart(startCallbackId);
         } catch (Exception error) {
-            fail("分屏截图启动失败：" + error.getMessage());
+            failStart(startCallbackId, "连续分屏截图启动失败：" + error.getMessage());
         }
         return START_NOT_STICKY;
     }
 
-    private void startProjection(int resultCode, Intent resultData, Rect appBounds) {
+    private void startProjection(int resultCode, Intent resultData) {
         WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         if (windowManager == null) throw new IllegalStateException("WindowManager unavailable");
 
-        int screenWidth;
-        int screenHeight;
         int densityDpi;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Rect bounds = windowManager.getMaximumWindowMetrics().getBounds();
@@ -128,67 +154,46 @@ public class ScreenCaptureService extends Service {
             densityDpi = metrics.densityDpi;
         }
 
-        Rect crop = computeOtherPane(appBounds, screenWidth, screenHeight);
-        if (crop == null || crop.width() < 120 || crop.height() < 180) {
-            fail("没有检测到有效分屏。请先让 Water Sort 与淘特处于上下或左右分屏，再点“分屏截图”。");
-            return;
-        }
-
         MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         if (manager == null) throw new IllegalStateException("MediaProjectionManager unavailable");
-
         projection = manager.getMediaProjection(resultCode, resultData);
         if (projection == null) throw new IllegalStateException("MediaProjection unavailable");
 
-        captureThread = new HandlerThread("water-sort-capture");
+        captureThread = new HandlerThread("water-sort-continuous-capture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
 
         projection.registerCallback(new MediaProjection.Callback() {
             @Override
             public void onStop() {
-                if (!completed) fail("系统已结束本次截屏授权，请重新点“分屏截图”。");
-                else cleanup(false);
+                if (!destroying) finishSession("系统已结束本次截屏授权", false);
             }
         }, captureHandler);
 
         imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2);
         imageReader.setOnImageAvailableListener(reader -> {
-            if (completed) return;
             Image image = null;
             try {
                 image = reader.acquireLatestImage();
                 if (image == null) return;
-                Bitmap full = imageToBitmap(image, screenWidth, screenHeight);
-                Bitmap cropped = Bitmap.createBitmap(full, crop.left, crop.top, crop.width(), crop.height());
-                full.recycle();
-
-                File dir = new File(getCacheDir(), "split-captures");
-                if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("无法创建截图缓存目录");
-                purgeOldCaptures(dir);
-                File target = new File(dir, "split-" + System.currentTimeMillis() + ".jpg");
-                try (FileOutputStream output = new FileOutputStream(target)) {
-                    if (!cropped.compress(Bitmap.CompressFormat.JPEG, 95, output)) {
-                        throw new IllegalStateException("截图压缩失败");
-                    }
-                    output.flush();
-                }
-                int resultWidth = cropped.getWidth();
-                int resultHeight = cropped.getHeight();
-                cropped.recycle();
-                completed = true;
-                Handler main = new Handler(Looper.getMainLooper());
-                main.post(() -> ScreenCapturePlugin.completeCapture(callbackId, target, resultWidth, resultHeight, crop));
-                cleanup(true);
+                String callbackId = pendingCaptureCallbackId;
+                Rect appBounds = pendingAppBounds;
+                if (callbackId == null || appBounds == null) return;
+                pendingCaptureCallbackId = null;
+                pendingAppBounds = null;
+                captureImage(image, callbackId, appBounds);
             } catch (Exception error) {
-                fail("读取分屏画面失败：" + error.getMessage());
+                String callbackId = pendingCaptureCallbackId;
+                pendingCaptureCallbackId = null;
+                pendingAppBounds = null;
+                if (callbackId != null) failCapture(callbackId, "读取分屏画面失败：" + error.getMessage());
             } finally {
                 if (image != null) image.close();
             }
         }, captureHandler);
 
         virtualDisplay = projection.createVirtualDisplay(
-            "WaterSortSplitCapture",
+            "WaterSortContinuousCapture",
             screenWidth,
             screenHeight,
             densityDpi,
@@ -199,33 +204,86 @@ public class ScreenCaptureService extends Service {
         );
     }
 
-    private Rect computeOtherPane(Rect appBounds, int screenWidth, int screenHeight) {
+    private void queueCapture(String callbackId, Rect appBounds) {
+        if (!isSessionActive()) {
+            failCapture(callbackId, "连续截图会话已结束，请重新开启。");
+            return;
+        }
+        if (pendingCaptureCallbackId != null) {
+            failCapture(callbackId, "上一张分屏截图仍在处理中，请稍后再试。");
+            return;
+        }
+        Rect crop = computeOtherPane(appBounds, screenWidth, screenHeight);
+        if (crop == null || crop.width() < 120 || crop.height() < 180) {
+            failCapture(callbackId, "没有检测到有效分屏。请先让 Water Sort 与淘特处于上下或左右分屏，再点“连续截图”。");
+            return;
+        }
+        pendingCaptureCallbackId = callbackId;
+        pendingAppBounds = appBounds;
+        captureHandler.postDelayed(() -> {
+            if (!callbackId.equals(pendingCaptureCallbackId)) return;
+            pendingCaptureCallbackId = null;
+            pendingAppBounds = null;
+            failCapture(callbackId, "等待屏幕画面超时，请确认授权的是“整个屏幕”后重试。");
+        }, 3000L);
+    }
+
+    private void captureImage(Image image, String callbackId, Rect appBounds) throws Exception {
+        Rect crop = computeOtherPane(appBounds, screenWidth, screenHeight);
+        if (crop == null || crop.width() < 120 || crop.height() < 180) {
+            failCapture(callbackId, "当前已经不在有效分屏状态，请重新进入分屏。");
+            return;
+        }
+
+        Bitmap full = imageToBitmap(image, screenWidth, screenHeight);
+        Bitmap cropped = Bitmap.createBitmap(full, crop.left, crop.top, crop.width(), crop.height());
+        full.recycle();
+
+        File dir = new File(getCacheDir(), "split-captures");
+        if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("无法创建截图缓存目录");
+        purgeOldCaptures(dir);
+        File target = new File(dir, "split-" + System.currentTimeMillis() + ".jpg");
+        try (FileOutputStream output = new FileOutputStream(target)) {
+            if (!cropped.compress(Bitmap.CompressFormat.JPEG, 95, output)) {
+                throw new IllegalStateException("截图压缩失败");
+            }
+            output.flush();
+        }
+        int resultWidth = cropped.getWidth();
+        int resultHeight = cropped.getHeight();
+        cropped.recycle();
+
+        Handler main = new Handler(Looper.getMainLooper());
+        main.post(() -> ScreenCapturePlugin.completeCapture(callbackId, target, resultWidth, resultHeight, crop));
+    }
+
+    private Rect computeOtherPane(Rect appBounds, int fullWidth, int fullHeight) {
         Rect app = new Rect(
-            Math.max(0, Math.min(screenWidth, appBounds.left)),
-            Math.max(0, Math.min(screenHeight, appBounds.top)),
-            Math.max(0, Math.min(screenWidth, appBounds.right)),
-            Math.max(0, Math.min(screenHeight, appBounds.bottom))
+            Math.max(0, Math.min(fullWidth, appBounds.left)),
+            Math.max(0, Math.min(fullHeight, appBounds.top)),
+            Math.max(0, Math.min(fullWidth, appBounds.right)),
+            Math.max(0, Math.min(fullHeight, appBounds.bottom))
         );
         int gap = Math.max(6, Math.round(getResources().getDisplayMetrics().density * 6));
 
-        boolean horizontalDivider = app.width() >= screenWidth * 0.65f && app.height() < screenHeight * 0.86f;
+        boolean horizontalDivider = app.width() >= fullWidth * 0.65f && app.height() < fullHeight * 0.86f;
         if (horizontalDivider) {
-            if (app.centerY() <= screenHeight / 2) {
-                int top = Math.min(screenHeight, app.bottom + gap);
-                return new Rect(0, top, screenWidth, screenHeight);
+            if (app.centerY() <= fullHeight / 2) {
+                int top = Math.min(fullHeight, app.bottom + gap);
+                return new Rect(0, top, fullWidth, fullHeight);
             }
             int bottom = Math.max(0, app.top - gap);
-            return new Rect(0, 0, screenWidth, bottom);
+            return new Rect(0, 0, fullWidth, bottom);
         }
 
-        boolean verticalDivider = app.height() >= screenHeight * 0.65f && app.width() < screenWidth * 0.86f;
+        boolean verticalDivider = app.height() >= fullHeight * 0.65f && app.width() < fullWidth * 0.86f;
         if (verticalDivider) {
-            if (app.centerX() <= screenWidth / 2) {
-                int left = Math.min(screenWidth, app.right + gap);
-                return new Rect(left, 0, screenWidth, screenHeight);
+            if (app.centerX() <= fullWidth / 2) {
+                int left = Math.min(fullWidth, app.right + gap);
+                return new Rect(left, 0, fullWidth, fullHeight);
             }
             int right = Math.max(0, app.left - gap);
-            return new Rect(0, 0, right, screenHeight);
+            return new Rect(0, 0, right, fullHeight);
         }
         return null;
     }
@@ -260,20 +318,30 @@ public class ScreenCaptureService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) return;
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "分屏截图", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("仅在用户主动授权时读取分屏画面用于本地识别");
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "连续分屏截图", NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("用户授权后，在本次求解会话中连续读取另一侧游戏画面");
         manager.createNotificationChannel(channel);
     }
 
-    private void fail(String message) {
-        if (completed) return;
-        completed = true;
+    private void failStart(String callbackId, String message) {
         Handler main = new Handler(Looper.getMainLooper());
-        main.post(() -> ScreenCapturePlugin.failCapture(callbackId, message));
-        cleanup(true);
+        main.post(() -> ScreenCapturePlugin.failSessionStart(callbackId, message));
+        finishSession(message, true);
     }
 
-    private synchronized void cleanup(boolean stopProjection) {
+    private void failCapture(String callbackId, String message) {
+        Handler main = new Handler(Looper.getMainLooper());
+        main.post(() -> ScreenCapturePlugin.failCapture(callbackId, message));
+    }
+
+    private synchronized void finishSession(String reason, boolean stopProjection) {
+        if (destroying) return;
+        destroying = true;
+        String pending = pendingCaptureCallbackId;
+        pendingCaptureCallbackId = null;
+        pendingAppBounds = null;
+        if (pending != null) failCapture(pending, reason);
+
         try {
             if (virtualDisplay != null) virtualDisplay.release();
         } catch (Exception ignored) {}
@@ -298,6 +366,14 @@ public class ScreenCaptureService extends Service {
             //noinspection deprecation
             stopForeground(true);
         }
+        activeService = null;
+        ScreenCapturePlugin.notifySessionState(false, reason);
         stopSelf();
+    }
+
+    @Override
+    public void onDestroy() {
+        if (!destroying) finishSession("连续分屏截图会话已结束", true);
+        super.onDestroy();
     }
 }
