@@ -1,7 +1,7 @@
 {
   "name": "water-sort-solver",
-  "version": "0.9.3",
-  "androidVersionCode": 14,
+  "version": "0.9.4",
+  "androidVersionCode": 15,
   "private": true,
   "scripts": {
     "dev": "next dev",
