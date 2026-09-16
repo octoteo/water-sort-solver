@@ -200,3 +200,5 @@ jobs:
             echo "::error::Gitee mirror could not be verified after publishing."
             exit 1
           fi
+
+# Mirror verification is intentionally part of the release gate.
