@@ -147,7 +147,8 @@ public class ScreenCaptureService extends Service {
         projection.registerCallback(new MediaProjection.Callback() {
             @Override
             public void onStop() {
-                cleanup(false);
+                if (!completed) fail("系统已结束本次截屏授权，请重新点“分屏截图”。");
+                else cleanup(false);
             }
         }, captureHandler);
 
