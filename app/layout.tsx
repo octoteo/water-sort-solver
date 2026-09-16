@@ -3,11 +3,12 @@ import "./globals.css";
 import "./v03.css";
 import "./v04.css";
 import "./v05.css";
+import "./v06.css";
 import PwaRegister from "./pwa-register";
 
 export const metadata: Metadata = {
   title: "Water Sort Solver",
-  description: "Offline-first Water Sort solver for Android screenshot sharing, local recognition, worker search and continuous mobile execution.",
+  description: "Offline-first Water Sort solver for Android native screenshot sharing, local recognition, worker search and continuous mobile execution.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
