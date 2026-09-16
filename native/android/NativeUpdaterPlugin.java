@@ -16,23 +16,64 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @CapacitorPlugin(name = "NativeUpdater")
 public class NativeUpdaterPlugin extends Plugin {
+    private static final String GITEE_MANIFEST = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/latest.json";
+    private static final String GITHUB_RELEASE_MANIFEST = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/latest.json";
     private static final String[] MANIFEST_URLS = new String[]{
+        GITEE_MANIFEST,
+        GITHUB_RELEASE_MANIFEST,
         "https://water-sort-solver-eight.vercel.app/update/latest.json",
         "https://raw.githubusercontent.com/octoteo/water-sort-solver/main/public/update/latest.json"
     };
+
+    private volatile UpdatePlan lastPlan;
+
+    private static final class ApkSource {
+        final String name;
+        final String url;
+
+        ApkSource(String name, String url) {
+            this.name = name;
+            this.url = url;
+        }
+    }
+
+    private static final class UpdatePlan {
+        final long versionCode;
+        final String versionName;
+        final String notes;
+        final String sha256;
+        final String manifestUrl;
+        final List<ApkSource> sources;
+
+        UpdatePlan(long versionCode, String versionName, String notes, String sha256, String manifestUrl, List<ApkSource> sources) {
+            this.versionCode = versionCode;
+            this.versionName = versionName;
+            this.notes = notes;
+            this.sha256 = sha256;
+            this.manifestUrl = manifestUrl;
+            this.sources = sources;
+        }
+    }
 
     @PluginMethod
     public void getCurrentVersion(PluginCall call) {
@@ -58,9 +99,13 @@ public class NativeUpdaterPlugin extends Plugin {
                     long currentCode = getVersionCode(current);
                     long latestCode = manifest.optLong("versionCode", currentCode);
                     String latestName = manifest.optString("versionName", String.valueOf(latestCode));
-                    String apkUrl = manifest.optString("apkUrl", "");
                     String notes = manifest.optString("notes", "");
-                    if (apkUrl.isEmpty()) throw new IllegalStateException("更新清单缺少 apkUrl");
+                    String sha256 = normalizeSha256(manifest.optString("sha256", ""));
+                    List<ApkSource> sources = parseSources(manifest);
+                    if (sources.isEmpty()) throw new IllegalStateException("更新清单缺少 APK 下载地址");
+
+                    UpdatePlan plan = new UpdatePlan(latestCode, latestName, notes, sha256, manifestUrl, sources);
+                    lastPlan = plan;
 
                     JSObject result = new JSObject();
                     result.put("available", latestCode > currentCode);
@@ -68,7 +113,10 @@ public class NativeUpdaterPlugin extends Plugin {
                     result.put("currentVersionName", current.versionName != null ? current.versionName : "0.0.0");
                     result.put("versionCode", latestCode);
                     result.put("versionName", latestName);
-                    result.put("apkUrl", apkUrl);
+                    result.put("apkUrl", sources.get(0).url);
+                    result.put("fallbackApkUrl", sources.size() > 1 ? sources.get(1).url : "");
+                    result.put("downloadSource", sources.get(0).name);
+                    result.put("sha256", sha256);
                     result.put("notes", notes);
                     result.put("manifestUrl", manifestUrl);
                     call.resolve(result);
@@ -83,8 +131,8 @@ public class NativeUpdaterPlugin extends Plugin {
 
     @PluginMethod
     public void installUpdate(PluginCall call) {
-        String apkUrl = call.getString("apkUrl");
-        if (apkUrl == null || apkUrl.isEmpty()) {
+        String requestedUrl = call.getString("apkUrl");
+        if (requestedUrl == null || requestedUrl.isEmpty()) {
             call.reject("缺少 APK 下载地址。");
             return;
         }
@@ -113,10 +161,38 @@ public class NativeUpdaterPlugin extends Plugin {
                 File updateDir = new File(getContext().getCacheDir(), "updates");
                 if (!updateDir.exists() && !updateDir.mkdirs()) throw new IllegalStateException("无法创建更新目录");
                 target = new File(updateDir, "water-sort-solver-update.apk");
-                download(apkUrl, target);
-                if (target.length() < 500_000) throw new IllegalStateException("下载到的 APK 文件异常");
+
+                UpdatePlan plan = lastPlan;
+                List<ApkSource> candidates = new ArrayList<>();
+                String expectedSha256 = "";
+                if (plan != null && !plan.sources.isEmpty() && requestedUrl.equals(plan.sources.get(0).url)) {
+                    candidates.addAll(plan.sources);
+                    expectedSha256 = plan.sha256;
+                } else {
+                    candidates.add(new ApkSource("首选源", requestedUrl));
+                }
+
+                Exception lastDownloadError = null;
+                ApkSource successfulSource = null;
+                for (ApkSource source : candidates) {
+                    try {
+                        if (target.exists() && !target.delete()) throw new IllegalStateException("无法清理旧更新文件");
+                        download(source.url, target);
+                        if (target.length() < 500_000) throw new IllegalStateException("下载到的 APK 文件异常");
+                        if (!expectedSha256.isEmpty()) verifySha256(target, expectedSha256);
+                        successfulSource = source;
+                        break;
+                    } catch (Exception error) {
+                        lastDownloadError = error;
+                    }
+                }
+
+                if (successfulSource == null) {
+                    throw new IllegalStateException(lastDownloadError != null ? lastDownloadError.getMessage() : "所有更新源均不可用");
+                }
 
                 File apk = target;
+                String sourceName = successfulSource.name;
                 Activity activity = getActivity();
                 if (activity == null) throw new IllegalStateException("Activity unavailable");
                 activity.runOnUiThread(() -> {
@@ -134,6 +210,7 @@ public class NativeUpdaterPlugin extends Plugin {
                         JSObject result = new JSObject();
                         result.put("started", true);
                         result.put("needsPermission", false);
+                        result.put("source", sourceName);
                         call.resolve(result);
                     } catch (Exception error) {
                         call.reject("无法打开 Android 安装器：" + error.getMessage());
@@ -147,6 +224,26 @@ public class NativeUpdaterPlugin extends Plugin {
                 call.reject("下载更新失败：" + error.getMessage());
             }
         }, "water-sort-update-download").start();
+    }
+
+    private List<ApkSource> parseSources(JSONObject manifest) {
+        Map<String, ApkSource> unique = new LinkedHashMap<>();
+        JSONArray sources = manifest.optJSONArray("apkSources");
+        if (sources != null) {
+            for (int index = 0; index < sources.length(); index++) {
+                JSONObject source = sources.optJSONObject(index);
+                if (source == null) continue;
+                String url = source.optString("url", "").trim();
+                if (url.isEmpty()) continue;
+                String name = source.optString("name", "更新源").trim();
+                unique.put(url, new ApkSource(name.isEmpty() ? "更新源" : name, url));
+            }
+        }
+        String legacyUrl = manifest.optString("apkUrl", "").trim();
+        if (!legacyUrl.isEmpty() && !unique.containsKey(legacyUrl)) {
+            unique.put(legacyUrl, new ApkSource("兼容更新源", legacyUrl));
+        }
+        return new ArrayList<>(unique.values());
     }
 
     private PackageInfo getPackageInfo() throws PackageManager.NameNotFoundException {
@@ -205,12 +302,32 @@ public class NativeUpdaterPlugin extends Plugin {
         }
     }
 
+    private void verifySha256(File file, String expected) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                if (read > 0) digest.update(buffer, 0, read);
+            }
+        }
+        StringBuilder actual = new StringBuilder();
+        for (byte value : digest.digest()) actual.append(String.format("%02x", value & 0xff));
+        if (!actual.toString().equals(normalizeSha256(expected))) {
+            throw new IllegalStateException("APK SHA-256 校验失败");
+        }
+    }
+
+    private String normalizeSha256(String value) {
+        return value == null ? "" : value.replace(":", "").trim().toLowerCase();
+    }
+
     private HttpURLConnection open(String sourceUrl) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(sourceUrl).openConnection();
         connection.setConnectTimeout(8_000);
-        connection.setReadTimeout(30_000);
+        connection.setReadTimeout(60_000);
         connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("User-Agent", "WaterSortSolver-Android/0.7");
+        connection.setRequestProperty("User-Agent", "WaterSortSolver-Android/0.8");
         connection.setRequestProperty("Accept", "application/json, application/vnd.android.package-archive, */*");
         return connection;
     }
