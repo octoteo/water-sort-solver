@@ -16,7 +16,13 @@ type NativeScreenCapturePlugin = {
   addListener: (eventName: "captureSessionChanged", listener: (payload: CaptureSessionState) => void) => Promise<{ remove: () => Promise<void> }>;
 };
 type NativeUpdateInfo = { available: boolean; currentVersionCode: number; currentVersionName: string; versionCode: number; versionName: string; apkUrl: string; notes?: string; manifestUrl?: string };
-type NativeUpdaterPlugin = { getCurrentVersion: () => Promise<{ versionName: string; versionCode: number }>; checkForUpdate: () => Promise<NativeUpdateInfo>; installUpdate: (options: { apkUrl: string }) => Promise<{ started: boolean; needsPermission: boolean }> };
+type NativeUpdaterPlugin = {
+  getCurrentVersion: () => Promise<{ versionName: string; versionCode: number }>;
+  checkForUpdate: () => Promise<NativeUpdateInfo>;
+  installUpdate: (options: { apkUrl: string }) => Promise<{ started: boolean; needsPermission: boolean; sessionId?: number; source?: string }>;
+  getUpdateDiagnostics: () => Promise<{ report: string }>;
+  clearUpdateDiagnostics: () => Promise<{ cleared: boolean }>;
+};
 
 const NativeShareReceiver = registerPlugin<NativeShareReceiverPlugin>("ShareReceiver");
 const NativeScreenCapture = registerPlugin<NativeScreenCapturePlugin>("ScreenCapture");
@@ -31,6 +37,7 @@ function wait(ms: number) { return new Promise((resolve) => window.setTimeout(re
 async function findScreenshotInput() { for (let attempt = 0; attempt < 30; attempt++) { const input = document.querySelector<HTMLInputElement>('input[type="file"][accept*="image"]'); if (input && !input.disabled) return input; await wait(100); } return null; }
 function fileExtension(mimeType: string) { if (mimeType.includes("png")) return "png"; if (mimeType.includes("webp")) return "webp"; if (mimeType.includes("gif")) return "gif"; if (mimeType.includes("heic") || mimeType.includes("heif")) return "heic"; return "jpg"; }
 async function dispatchImageFile(file: File) { const input = await findScreenshotInput(); if (!input) throw new Error("没有找到截图输入区，请刷新页面后重试。"); const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files; input.dispatchEvent(new Event("change", { bubbles: true })); }
+async function copyText(text: string) { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return; } const field = document.createElement("textarea"); field.value = text; field.style.position = "fixed"; field.style.opacity = "0"; document.body.appendChild(field); field.focus(); field.select(); document.execCommand("copy"); field.remove(); }
 
 export default function PwaRegister() {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
@@ -43,6 +50,8 @@ export default function PwaRegister() {
   const [captureSessionActive, setCaptureSessionActive] = useState(false);
   const [updateBusy, setUpdateBusy] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<NativeUpdateInfo | null>(null);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<string | null>(null);
   const autoCaptureDone = useRef(false);
 
   useEffect(() => {
@@ -112,7 +121,10 @@ export default function PwaRegister() {
   }, [nativeRuntime, captureSessionActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkNativeUpdate = async () => { if (!nativeRuntime || updateBusy) return; setUpdateBusy(true); try { const update = await NativeUpdater.checkForUpdate(); localStorage.setItem(UPDATE_CHECK_KEY, String(Date.now())); setUpdateInfo(update.available ? update : null); setNotice(update.available ? `发现新版本 v${update.versionName}。` : `当前 v${update.currentVersionName} 已是最新版本。`); } catch (error) { setNotice(error instanceof Error ? error.message : "检查更新失败。"); } finally { setUpdateBusy(false); } };
-  const installNativeUpdate = async () => { if (!updateInfo || updateBusy) return; setUpdateBusy(true); try { const result = await NativeUpdater.installUpdate({ apkUrl: updateInfo.apkUrl }); if (result.needsPermission) setNotice("请在系统设置中允许 Water Sort Solver“安装未知应用”，返回后再点一次更新。"); else if (result.started) setNotice("新版 APK 已下载，按 Android 系统安装提示完成更新即可；原有本机数据会保留。"); } catch (error) { setNotice(error instanceof Error ? error.message : "安装更新失败。"); } finally { setUpdateBusy(false); } };
+  const installNativeUpdate = async () => { if (!updateInfo || updateBusy) return; setUpdateBusy(true); try { const result = await NativeUpdater.installUpdate({ apkUrl: updateInfo.apkUrl }); if (result.needsPermission) setNotice("请在系统设置中允许 Water Sort Solver“安装未知应用”，返回后再点一次更新。"); else if (result.started) setNotice(`已提交 Android 安装会话${result.sessionId ? ` #${result.sessionId}` : ""}。如果系统安装确认没有出现，请立即点“更新诊断”并复制报告。`); } catch (error) { setNotice(error instanceof Error ? error.message : "安装更新失败。"); } finally { setUpdateBusy(false); } };
+  const openUpdateDiagnostics = async () => { if (!nativeRuntime || diagnosticsBusy) return; setDiagnosticsBusy(true); try { const result = await NativeUpdater.getUpdateDiagnostics(); setDiagnostics(result.report); } catch (error) { setNotice(error instanceof Error ? error.message : "读取更新诊断失败。"); } finally { setDiagnosticsBusy(false); } };
+  const clearUpdateDiagnostics = async () => { if (!nativeRuntime || diagnosticsBusy) return; setDiagnosticsBusy(true); try { await NativeUpdater.clearUpdateDiagnostics(); const result = await NativeUpdater.getUpdateDiagnostics(); setDiagnostics(result.report); setNotice("更新诊断日志已清空。"); } catch (error) { setNotice(error instanceof Error ? error.message : "清空更新诊断失败。"); } finally { setDiagnosticsBusy(false); } };
+  const copyUpdateDiagnostics = async () => { if (!diagnostics) return; try { await copyText(diagnostics); setNotice("更新诊断信息已复制，可以直接粘贴给我分析。"); } catch { setNotice("复制失败，请长按诊断文本手动复制。"); } };
 
   const nativeSharePage = nativeRuntime && isNativeSharePage();
   return <>
@@ -123,8 +135,10 @@ export default function PwaRegister() {
       {nativeSharePage && <button className="native-split-capture" type="button" disabled={captureBusy} onClick={() => void (captureSessionActive ? captureSplitScreen() : startContinuousSolve())}>{captureBusy ? "正在截图…" : captureSessionActive ? "📸 连续截图" : "▶ 开始分屏"}</button>}
       {nativeSharePage && captureSessionActive && <button className="native-session-stop" type="button" onClick={() => void stopContinuousSolve()}>结束</button>}
       <button className="native-update-button" type="button" disabled={updateBusy} onClick={() => void checkNativeUpdate()}>{updateBusy ? "检查中…" : `检查更新${nativeVersion ? ` · v${nativeVersion}` : ""}`}</button>
+      <button className="native-diagnostics-button" type="button" disabled={diagnosticsBusy} onClick={() => void openUpdateDiagnostics()}>{diagnosticsBusy ? "读取中…" : "更新诊断"}</button>
     </div>}
     {nativeRuntime && updateInfo?.available && <div className="native-update-banner"><div><strong>发现 v{updateInfo.versionName}</strong><span>{updateInfo.notes || "有新的 Android 版本可安装。"}</span></div><button type="button" disabled={updateBusy} onClick={() => void installNativeUpdate()}>{updateBusy ? "准备中…" : "立即更新"}</button><button className="native-update-close" type="button" aria-label="稍后更新" onClick={() => setUpdateInfo(null)}>×</button></div>}
+    {nativeRuntime && diagnostics && <div className="native-diagnostics-overlay" role="dialog" aria-modal="true" aria-label="更新诊断"><section className="native-diagnostics-panel"><header><div><strong>更新诊断</strong><span>仅保存在本机，不会自动上传</span></div><button type="button" aria-label="关闭诊断" onClick={() => setDiagnostics(null)}>×</button></header><textarea readOnly value={diagnostics} aria-label="更新诊断报告"/><footer><button type="button" onClick={() => void copyUpdateDiagnostics()}>复制诊断信息</button><button type="button" disabled={diagnosticsBusy} onClick={() => void openUpdateDiagnostics()}>刷新</button><button type="button" disabled={diagnosticsBusy} onClick={() => void clearUpdateDiagnostics()}>清空日志</button></footer></section></div>}
     {notice && <button className="pwa-notice" type="button" onClick={() => setNotice(null)} title="点击关闭">{notice}</button>}
   </>;
 }
