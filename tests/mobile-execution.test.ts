@@ -5,7 +5,7 @@ const sharePage = readFileSync(new URL("../app/share/page.tsx", import.meta.url)
 const historyStore = readFileSync(new URL("../lib/local-history.ts", import.meta.url), "utf8");
 const serviceWorker = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
 
-describe("v0.5 mobile execution contract", () => {
+describe("v0.5+ mobile execution contract", () => {
   it("keeps continuous play controls on the quick-solve page", () => {
     expect(sharePage).toContain("ANDROID QUICK SOLVE · V0.5");
     expect(sharePage).toContain("完成第 ${step + 1} 步");
@@ -35,8 +35,8 @@ describe("v0.5 mobile execution contract", () => {
     expect(sharePage).toContain("localStorage.setItem(progressKey, String(step))");
   });
 
-  it("bumps the offline application shell cache for the new release", () => {
-    expect(serviceWorker).toContain('const VERSION = "0.5.0"');
+  it("bumps the offline application shell cache for the current release", () => {
+    expect(serviceWorker).toContain('const VERSION = "0.6.0"');
     expect(serviceWorker).toContain('const PAGE_SHELLS = ["/", "/share"]');
   });
 });
