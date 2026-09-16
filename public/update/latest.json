@@ -1,11 +1,11 @@
 {
-  "versionCode": 11,
-  "versionName": "0.9.0",
-  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.0/Water-Sort-Solver.apk",
+  "versionCode": 12,
+  "versionName": "0.9.1",
+  "apkUrl": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.1/Water-Sort-Solver.apk",
   "apkSources": [
     {
       "name": "Gitee 中国镜像",
-      "url": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.0/Water-Sort-Solver.apk"
+      "url": "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.9.1/Water-Sort-Solver.apk"
     },
     {
       "name": "GitHub 全球备用",
@@ -13,5 +13,5 @@
     }
   ],
   "sha256": "",
-  "notes": "v0.9.0：新增连续分屏求解会话。一次授权后可重复截取另一侧游戏窗口，截图后继续复用本地识别与 Web Worker 自动求解；主页面新增“开始分屏求解”，并可显式结束截图会话。"
+  "notes": "v0.9.1：增加识别结果完整性安全门。颜色层数不是 4 的整数倍、杯子超容量、无效颜色或广告杯索引异常时，会在进入搜索前停止自动求解，并直接指出优先核对的杯子，避免静默给出错误步骤。"
 }
