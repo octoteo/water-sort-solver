@@ -86,9 +86,15 @@ repoInfo = await getRepo();
 branch = repoInfo.default_branch || branch || "main";
 await writeFile("latest.json", manifestText, branch);
 
-let release;
+// Gitee may answer a missing tag lookup with HTTP 200 and a JSON null body
+// instead of HTTP 404. Treat both cases as "release does not exist".
+let release = null;
 const releaseResponse = await request(`${api}/releases/tags/${encodeURIComponent(tag)}`, {}, [404]);
-if (releaseResponse.status === 404) {
+if (releaseResponse.status !== 404) {
+  release = await releaseResponse.json();
+}
+
+if (!release || !release.id) {
   const create = await request(`${api}/releases`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -103,7 +109,6 @@ if (releaseResponse.status === 404) {
   });
   release = await create.json();
 } else {
-  release = await releaseResponse.json();
   const patch = await request(`${api}/releases/${release.id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -115,6 +120,10 @@ if (releaseResponse.status === 404) {
     }),
   });
   release = await patch.json();
+}
+
+if (!release || !release.id) {
+  throw new Error(`Gitee Release ${tag} was not created or returned without an id`);
 }
 
 const assetsResponse = await request(`${api}/releases/${release.id}/attach_files`);
