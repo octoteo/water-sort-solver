@@ -15,17 +15,14 @@ if (!versionName || !Number.isInteger(versionCode) || versionCode <= 0) {
   throw new Error("package.json must define version and androidVersionCode");
 }
 
-// Gitee's Git smart-HTTP endpoint can be slow/unreachable from GitHub-hosted
-// runners. The China mirror is therefore published through Gitee OpenAPI as a
-// versioned Release attachment; the tiny latest.json stays in the repository.
 const giteeApkUrl = `https://gitee.com/octoteo/water-sort-solver-android/releases/download/v${versionName}/Water-Sort-Solver.apk`;
 const githubApkUrl = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk";
 
 const manifest = {
   versionCode,
   versionName,
-  // v0.7 only understands apkUrl. Keep this field pointed at Gitee so existing
-  // China users can make the one-time upgrade to the multi-source v0.8 client.
+  // v0.7 and v0.8.0 only understand apkUrl. Keep this field pointed at Gitee
+  // so existing China users can always discover the newest build.
   apkUrl: giteeApkUrl,
   apkSources: [
     {
@@ -38,7 +35,7 @@ const manifest = {
     },
   ],
   sha256,
-  notes: "v0.8：中国大陆 Gitee 镜像优先、GitHub 自动兜底，并对下载 APK 做 SHA-256 完整性校验。",
+  notes: `v${versionName}：修复部分小米/MIUI 安装器读取更新 APK 时的 FileProvider 权限问题；主页面新增手动“检查更新”，保留 Gitee 优先、GitHub 兜底和 SHA-256 校验。`,
 };
 
 await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);

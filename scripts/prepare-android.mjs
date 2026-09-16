@@ -52,6 +52,24 @@ ensurePermission("android.permission.REQUEST_INSTALL_PACKAGES");
 ensurePermission("android.permission.FOREGROUND_SERVICE");
 ensurePermission("android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION");
 
+// Android 11+ package visibility can otherwise hide the system installer from
+// queryIntentActivities(), which prevents us from granting its package an
+// explicit temporary FileProvider read permission on OEM ROMs such as MIUI.
+if (!manifest.includes("android.intent.action.INSTALL_PACKAGE")) {
+  const installerQueries = `
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.INSTALL_PACKAGE" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+    </queries>`;
+  manifest = manifest.replace("<application", `${installerQueries}\n\n    <application`);
+}
+
 const shareAction = "android.intent.action.SEND";
 if (!manifest.includes(shareAction)) {
   const shareFilter = `\n            <intent-filter>\n                <action android:name="android.intent.action.SEND" />\n                <category android:name="android.intent.category.DEFAULT" />\n                <data android:mimeType="image/*" />\n            </intent-filter>`;
@@ -60,14 +78,10 @@ if (!manifest.includes(shareAction)) {
   manifest = manifest.slice(0, activityClose) + shareFilter + "\n        " + manifest.slice(activityClose);
 }
 
-// Sharing a second screenshot while the app is already open should reach the
-// existing activity so onNewIntent() can hand the image to the WebView.
 if (/android:launchMode="[^"]+"/.test(manifest)) {
   manifest = manifest.replace(/android:launchMode="[^"]+"/, 'android:launchMode="singleTask"');
 }
 
-// Explicitly keep the Activity resizable so Water Sort can sit above/beside
-// the game while MediaProjection captures the opposite split-screen pane.
 if (!manifest.includes('android:resizeableActivity="true"')) {
   manifest = manifest.replace(/(<activity\b[^>]*android:name="\.MainActivity"[^>]*)(>)/, '$1 android:resizeableActivity="true"$2');
 }
@@ -95,7 +109,6 @@ if (!manifest.includes('android:resource="@xml/water_sort_file_paths"')) {
   manifest = manifest.replace("</application>", `${updateProvider}\n    </application>`);
 }
 
-// Use the Water Sort artwork instead of the default Capacitor launcher icon.
 manifest = manifest
   .replace(/android:icon="@[^"]+"/, 'android:icon="@drawable/water_sort_icon"')
   .replace(/android:roundIcon="@[^"]+"/, 'android:roundIcon="@drawable/water_sort_icon_round"');

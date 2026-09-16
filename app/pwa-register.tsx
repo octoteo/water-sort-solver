@@ -55,7 +55,7 @@ type NativeUpdaterPlugin = {
 const NativeShareReceiver = registerPlugin<NativeShareReceiverPlugin>("ShareReceiver");
 const NativeScreenCapture = registerPlugin<NativeScreenCapturePlugin>("ScreenCapture");
 const NativeUpdater = registerPlugin<NativeUpdaterPlugin>("NativeUpdater");
-const UPDATE_CHECK_KEY = "water-sort-native-update-check-v1";
+const UPDATE_CHECK_KEY = "water-sort-native-update-check-v2";
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 
 function isNativeApp() {
@@ -181,8 +181,6 @@ export default function PwaRegister() {
         if (!payload.uri || cancelled) return;
 
         if (!isNativeSharePage()) {
-          // Next static export emits out/share.html. Using that exact file keeps
-          // the native APK independent of clean-URL behavior from any web host.
           window.location.href = "/share.html?native=1";
           return;
         }
@@ -311,14 +309,16 @@ export default function PwaRegister() {
     }
   };
 
+  const nativeSharePage = nativeRuntime && isNativeSharePage();
+
   return (
     <>
       {!installed && installPrompt && <button className="pwa-install-fab" type="button" onClick={() => void install()}>安装到桌面</button>}
       {!nativeRuntime && !online && <div className="pwa-offline-chip">离线模式</div>}
 
-      {nativeRuntime && isNativeSharePage() && <div className="native-tool-dock" role="group" aria-label="Android 原生工具">
-        <button className="native-split-capture" type="button" disabled={captureBusy} onClick={() => void captureSplitScreen()}>{captureBusy ? "正在截图…" : "📸 分屏截图"}</button>
-        <button className="native-update-button" type="button" disabled={updateBusy} onClick={() => void checkNativeUpdate()}>{updateBusy ? "检查中…" : `更新${nativeVersion ? ` · v${nativeVersion}` : ""}`}</button>
+      {nativeRuntime && <div className={`native-tool-dock ${nativeSharePage ? "" : "native-update-only"}`} role="group" aria-label="Android 原生工具">
+        {nativeSharePage && <button className="native-split-capture" type="button" disabled={captureBusy} onClick={() => void captureSplitScreen()}>{captureBusy ? "正在截图…" : "📸 分屏截图"}</button>}
+        <button className="native-update-button" type="button" disabled={updateBusy} onClick={() => void checkNativeUpdate()}>{updateBusy ? "检查中…" : `检查更新${nativeVersion ? ` · v${nativeVersion}` : ""}`}</button>
       </div>}
 
       {nativeRuntime && updateInfo?.available && <div className="native-update-banner">

@@ -15,10 +15,10 @@ const pwaRegister = readFileSync(new URL("../app/pwa-register.tsx", import.meta.
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
 
-describe("v0.8.1 Android native contract", () => {
+describe("v0.8.2 Android native contract", () => {
   it("bundles the static app into Capacitor 8 without a runtime server", () => {
-    expect(packageJson.version).toBe("0.8.1");
-    expect(packageJson.androidVersionCode).toBe(9);
+    expect(packageJson.version).toBe("0.8.2");
+    expect(packageJson.androidVersionCode).toBe(10);
     expect(packageJson.dependencies["@capacitor/core"]).toBe("8.5.2");
     expect(packageJson.dependencies["@capacitor/android"]).toBe("8.5.2");
     expect(packageJson.devDependencies["@capacitor/cli"]).toBe("8.5.2");
@@ -59,19 +59,34 @@ describe("v0.8.1 Android native contract", () => {
     expect(updaterPlugin).toContain("checkForUpdate");
     expect(updaterPlugin).toContain("canRequestPackageInstalls");
     expect(updaterPlugin).toContain("FileProvider.getUriForFile");
+    expect(updaterPlugin).toContain("Intent.ACTION_INSTALL_PACKAGE");
+    expect(updaterPlugin).toContain("ClipData.newRawUri");
+    expect(updaterPlugin).toContain("queryIntentActivities");
+    expect(updaterPlugin).toContain("grantUriPermission");
+    expect(updaterPlugin).toContain("Intent.FLAG_GRANT_READ_URI_PERMISSION");
     expect(updaterPlugin).toContain("application/vnd.android.package-archive");
     expect(prepareScript).toContain("android.permission.REQUEST_INSTALL_PACKAGES");
+    expect(prepareScript).toContain("android.intent.action.INSTALL_PACKAGE");
     expect(prepareScript).toContain("water_sort_file_paths");
+    expect(prepareScript).toContain('android:exported="false"');
+    expect(prepareScript).toContain('android:grantUriPermissions="true"');
     expect(pwaRegister).toContain('registerPlugin<NativeUpdaterPlugin>("NativeUpdater")');
     expect(pwaRegister).toContain("UPDATE_CHECK_INTERVAL");
     expect(pwaRegister).toContain("立即更新");
-    expect(updateManifest.versionCode).toBe(9);
-    expect(updateManifest.versionName).toBe("0.8.1");
+    expect(updateManifest.versionCode).toBe(10);
+    expect(updateManifest.versionName).toBe("0.8.2");
+  });
+
+  it("exposes manual update checking on every native page", () => {
+    expect(pwaRegister).toContain('const UPDATE_CHECK_KEY = "water-sort-native-update-check-v2"');
+    expect(pwaRegister).toContain("{nativeRuntime && <div");
+    expect(pwaRegister).toContain("检查更新");
+    expect(pwaRegister).toContain("nativeSharePage && <button className=\"native-split-capture\"");
   });
 
   it("uses a China-friendly Gitee mirror first and GitHub as an automatic fallback", () => {
     const giteeManifest = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/latest.json";
-    const giteeApk = "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.8.1/Water-Sort-Solver.apk";
+    const giteeApk = "https://gitee.com/octoteo/water-sort-solver-android/releases/download/v0.8.2/Water-Sort-Solver.apk";
     const githubApk = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk";
     expect(updaterPlugin).toContain(giteeManifest);
     expect(updaterPlugin.indexOf("GITEE_MANIFEST")).toBeLessThan(updaterPlugin.indexOf("GITHUB_RELEASE_MANIFEST"));

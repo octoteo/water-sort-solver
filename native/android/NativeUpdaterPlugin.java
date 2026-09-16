@@ -1,9 +1,11 @@
 package com.octoteo.watersortsolver;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -36,6 +38,7 @@ import java.util.Map;
 
 @CapacitorPlugin(name = "NativeUpdater")
 public class NativeUpdaterPlugin extends Plugin {
+    private static final String APK_MIME = "application/vnd.android.package-archive";
     private static final String GITEE_MANIFEST = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/latest.json";
     private static final String GITHUB_RELEASE_MANIFEST = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/latest.json";
     private static final String[] MANIFEST_URLS = new String[]{
@@ -195,27 +198,7 @@ public class NativeUpdaterPlugin extends Plugin {
                 String sourceName = successfulSource.name;
                 Activity activity = getActivity();
                 if (activity == null) throw new IllegalStateException("Activity unavailable");
-                activity.runOnUiThread(() -> {
-                    try {
-                        Uri uri = FileProvider.getUriForFile(
-                            getContext(),
-                            getContext().getPackageName() + ".files",
-                            apk
-                        );
-                        Intent installIntent = new Intent(Intent.ACTION_VIEW);
-                        installIntent.setDataAndType(uri, "application/vnd.android.package-archive");
-                        installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        activity.startActivity(installIntent);
-
-                        JSObject result = new JSObject();
-                        result.put("started", true);
-                        result.put("needsPermission", false);
-                        result.put("source", sourceName);
-                        call.resolve(result);
-                    } catch (Exception error) {
-                        call.reject("无法打开 Android 安装器：" + error.getMessage());
-                    }
-                });
+                activity.runOnUiThread(() -> openInstaller(activity, apk, sourceName, call));
             } catch (Exception error) {
                 if (target != null) {
                     //noinspection ResultOfMethodCallIgnored
@@ -224,6 +207,62 @@ public class NativeUpdaterPlugin extends Plugin {
                 call.reject("下载更新失败：" + error.getMessage());
             }
         }, "water-sort-update-download").start();
+    }
+
+    private void openInstaller(Activity activity, File apk, String sourceName, PluginCall call) {
+        try {
+            Uri uri = FileProvider.getUriForFile(
+                getContext(),
+                getContext().getPackageName() + ".files",
+                apk
+            );
+
+            Intent installIntent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+            installIntent.setDataAndType(uri, APK_MIME);
+            installIntent.setClipData(ClipData.newRawUri("Water Sort Solver update", uri));
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            PackageManager packageManager = getContext().getPackageManager();
+            List<ResolveInfo> handlers = packageManager.queryIntentActivities(installIntent, PackageManager.MATCH_DEFAULT_ONLY);
+            if (handlers.isEmpty()) {
+                installIntent.setAction(Intent.ACTION_VIEW);
+                handlers = packageManager.queryIntentActivities(installIntent, PackageManager.MATCH_DEFAULT_ONLY);
+            }
+
+            grantReadAccess(uri, handlers);
+            ResolveInfo resolved = packageManager.resolveActivity(installIntent, PackageManager.MATCH_DEFAULT_ONLY);
+            if (resolved != null && resolved.activityInfo != null && resolved.activityInfo.packageName != null) {
+                getContext().grantUriPermission(
+                    resolved.activityInfo.packageName,
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                );
+            }
+
+            activity.startActivity(installIntent);
+
+            JSObject result = new JSObject();
+            result.put("started", true);
+            result.put("needsPermission", false);
+            result.put("source", sourceName);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("无法打开 Android 安装器：" + error.getMessage());
+        }
+    }
+
+    private void grantReadAccess(Uri uri, List<ResolveInfo> handlers) {
+        for (ResolveInfo handler : handlers) {
+            if (handler == null || handler.activityInfo == null) continue;
+            String packageName = handler.activityInfo.packageName;
+            if (packageName == null || packageName.isEmpty()) continue;
+            try {
+                getContext().grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) {
+                // Keep trying the remaining package installer handlers. The intent
+                // still carries a scoped grant as the platform-standard fallback.
+            }
+        }
     }
 
     private List<ApkSource> parseSources(JSONObject manifest) {
