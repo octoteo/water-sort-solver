@@ -54,6 +54,11 @@ jobs:
       - name: Build static web bundle
         run: npm run build
 
+      - name: Verify native static entrypoints
+        run: |
+          test -f out/index.html
+          test -f out/share.html
+
       - name: Generate Capacitor Android project
         run: |
           npx cap add android
