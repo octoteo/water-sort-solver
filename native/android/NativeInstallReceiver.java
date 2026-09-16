@@ -44,7 +44,7 @@ public class NativeInstallReceiver extends BroadcastReceiver {
             return;
         }
 
-        String detail = message == null || message.isBlank() ? "状态码 " + status : message;
+        String detail = message == null || message.trim().isEmpty() ? "状态码 " + status : message;
         Toast.makeText(context, "更新安装失败：" + detail, Toast.LENGTH_LONG).show();
     }
 }
