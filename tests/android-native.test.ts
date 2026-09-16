@@ -9,19 +9,23 @@ const capturePlugin = readFileSync(new URL("../native/android/ScreenCapturePlugi
 const captureService = readFileSync(new URL("../native/android/ScreenCaptureService.java", import.meta.url), "utf8");
 const updaterPlugin = readFileSync(new URL("../native/android/NativeUpdaterPlugin.java", import.meta.url), "utf8");
 const prepareScript = readFileSync(new URL("../scripts/prepare-android.mjs", import.meta.url), "utf8");
+const generateManifestScript = readFileSync(new URL("../scripts/generate-update-manifest.mjs", import.meta.url), "utf8");
 const pwaRegister = readFileSync(new URL("../app/pwa-register.tsx", import.meta.url), "utf8");
 const workflow = readFileSync(new URL("../.github/workflows/android-apk.yml", import.meta.url), "utf8");
 const updateManifest = JSON.parse(readFileSync(new URL("../public/update/latest.json", import.meta.url), "utf8"));
 
-describe("v0.7 Android native contract", () => {
+describe("v0.8 Android native contract", () => {
   it("bundles the static app into Capacitor 8 without a runtime server", () => {
-    expect(packageJson.version).toBe("0.7.0");
+    expect(packageJson.version).toBe("0.8.0");
+    expect(packageJson.androidVersionCode).toBe(8);
     expect(packageJson.dependencies["@capacitor/core"]).toBe("8.5.2");
     expect(packageJson.dependencies["@capacitor/android"]).toBe("8.5.2");
     expect(packageJson.devDependencies["@capacitor/cli"]).toBe("8.5.2");
     expect(capacitorConfig).toContain('appId: "com.octoteo.watersortsolver"');
     expect(capacitorConfig).toContain('webDir: "out"');
     expect(capacitorConfig).not.toContain("server.url");
+    expect(prepareScript).toContain("packageJson.androidVersionCode");
+    expect(prepareScript).toContain("packageJson.version");
   });
 
   it("receives Android ACTION_SEND images without broad storage permission", () => {
@@ -60,8 +64,29 @@ describe("v0.7 Android native contract", () => {
     expect(pwaRegister).toContain('registerPlugin<NativeUpdaterPlugin>("NativeUpdater")');
     expect(pwaRegister).toContain("UPDATE_CHECK_INTERVAL");
     expect(pwaRegister).toContain("立即更新");
-    expect(updateManifest.versionCode).toBe(7);
-    expect(updateManifest.versionName).toBe("0.7.0");
+    expect(updateManifest.versionCode).toBe(8);
+    expect(updateManifest.versionName).toBe("0.8.0");
+  });
+
+  it("uses a China-friendly Gitee mirror first and GitHub as an automatic fallback", () => {
+    const giteeManifest = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/latest.json";
+    const giteeApk = "https://gitee.com/octoteo/water-sort-solver-android/raw/main/Water-Sort-Solver.apk";
+    const githubApk = "https://github.com/octoteo/water-sort-solver/releases/download/android-latest/Water-Sort-Solver.apk";
+    expect(updaterPlugin).toContain(giteeManifest);
+    expect(updaterPlugin.indexOf("GITEE_MANIFEST")).toBeLessThan(updaterPlugin.indexOf("GITHUB_RELEASE_MANIFEST"));
+    expect(updaterPlugin).toContain("parseSources");
+    expect(updaterPlugin).toContain("candidates.addAll(plan.sources)");
+    expect(updateManifest.apkSources[0].url).toBe(giteeApk);
+    expect(updateManifest.apkSources[1].url).toBe(githubApk);
+    expect(generateManifestScript).toContain(giteeApk);
+    expect(generateManifestScript).toContain(githubApk);
+  });
+
+  it("verifies mirrored APK bytes before opening the Android installer", () => {
+    expect(updaterPlugin).toContain('MessageDigest.getInstance("SHA-256")');
+    expect(updaterPlugin).toContain("verifySha256(target, expectedSha256)");
+    expect(updaterPlugin).toContain("APK SHA-256 校验失败");
+    expect(generateManifestScript).toContain('createHash("sha256")');
   });
 
   it("patches the generated Android manifest for image sharing and singleTask delivery", () => {
@@ -79,15 +104,19 @@ describe("v0.7 Android native contract", () => {
     expect(pwaRegister).toContain("clearPendingShare");
   });
 
-  it("builds and publishes a stable rolling APK URL in GitHub Actions", () => {
+  it("builds one APK and can publish the same bytes to GitHub plus the Gitee distribution repository", () => {
     expect(workflow).toContain("npx cap add android");
     expect(workflow).toContain("sdkmanager \"platforms;android-36\"");
     expect(workflow).toContain("mkdir -p ~/.android");
     expect(workflow).toContain("water-sort-solver-debug-keystore-v2");
     expect(workflow).toContain("keytool -genkeypair");
     expect(workflow).toContain("./gradlew assembleDebug");
+    expect(workflow).toContain("generate-update-manifest.mjs");
     expect(workflow).toContain("Water-Sort-Solver.apk");
-    expect(workflow).toContain("gh release create android-latest");
+    expect(workflow).toContain("gh release create android-latest Water-Sort-Solver.apk latest.json");
+    expect(workflow).toContain("GITEE_TOKEN");
+    expect(workflow).toContain("octoteo/water-sort-solver-android.git");
+    expect(workflow).toContain("git push --force origin HEAD:refs/heads/main");
     expect(workflow).toContain("contents: write");
   });
 });
