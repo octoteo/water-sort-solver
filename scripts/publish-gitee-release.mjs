@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import { execFile as execFileCallback } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 
+const execFile = promisify(execFileCallback);
 const token = process.env.GITEE_TOKEN;
 if (!token) throw new Error("GITEE_TOKEN is required");
 
@@ -145,30 +148,50 @@ for (const asset of await listAssets()) {
   }
 }
 
-async function upload(name, bytes, type) {
+async function upload(name, filePath) {
   let lastError;
+  const endpoint = `${api}/releases/${release.id}/attach_files`;
+
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const form = new FormData();
-    form.append("access_token", token);
-    form.append("file", new Blob([bytes], { type }), name);
     try {
-      const response = await request(`${api}/releases/${release.id}/attach_files`, {
-        method: "POST",
-        body: form,
-      }, [], 180_000);
-      const asset = await response.json();
+      // Use curl's mature multipart implementation rather than Node/undici FormData.
+      // Gitee's own SDK/examples use a normal multipart file upload on this endpoint.
+      const { stdout, stderr } = await execFile("curl", [
+        "--fail-with-body",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--connect-timeout", "15",
+        "--max-time", "90",
+        "--retry", "2",
+        "--retry-delay", "3",
+        "--retry-connrefused",
+        "-H", `Authorization: Bearer ${token}`,
+        "-H", "Accept: application/json",
+        "-H", "User-Agent: water-sort-solver-release-bot/0.9",
+        "-F", `file=@${filePath};filename=${name}`,
+        endpoint,
+      ], {
+        timeout: 100_000,
+        maxBuffer: 1024 * 1024,
+      });
+
+      const asset = JSON.parse(stdout);
       if (asset?.id) return asset;
-      throw new Error(`Gitee upload of ${name} returned no asset id`);
+      throw new Error(`Gitee upload of ${name} returned no asset id: ${stdout.slice(0, 500)} ${stderr.slice(0, 200)}`);
     } catch (error) {
       lastError = error;
       try {
         const existing = (await listAssets()).find((asset) => asset?.name === name);
-        if (existing?.id) return existing;
+        if (existing?.id) {
+          console.log(`Gitee upload of ${name} became visible after client error; accepting asset id ${existing.id}`);
+          return existing;
+        }
       } catch {
         // Preserve the original upload error and retry below.
       }
       if (attempt < 3) {
-        console.warn(`Gitee upload ${name} attempt ${attempt}/3 failed; retrying...`);
+        console.warn(`Gitee curl upload ${name} attempt ${attempt}/3 failed; retrying...`);
         await sleep(attempt * 5_000);
       }
     }
@@ -180,7 +203,7 @@ async function verifyPublicApk() {
   let lastError = null;
   for (let attempt = 1; attempt <= 5; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 120_000);
+    const timer = setTimeout(() => controller.abort(), 60_000);
     try {
       const response = await fetch(publicApkUrl, {
         headers: {
@@ -209,8 +232,8 @@ async function verifyPublicApk() {
   throw new Error(`Gitee APK was uploaded but never became publicly verifiable: ${lastError?.message ?? "unknown error"}`);
 }
 
-const apkAsset = await upload("Water-Sort-Solver.apk", apk, "application/vnd.android.package-archive");
-await upload("latest.json", Buffer.from(manifestText, "utf8"), "application/json");
+const apkAsset = await upload("Water-Sort-Solver.apk", "Water-Sort-Solver.apk");
+await upload("latest.json", "latest.json");
 await verifyPublicApk();
 
 // Publish the discovery manifest only after the release asset is publicly downloadable
