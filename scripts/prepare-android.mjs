@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 const root = process.cwd();
 const javaDir = resolve(root, "android/app/src/main/java/com/octoteo/watersortsolver");
 const drawableDir = resolve(root, "android/app/src/main/res/drawable");
-const xmlDir = resolve(root, "android/app/src/main/res/xml");
 const manifestPath = resolve(root, "android/app/src/main/AndroidManifest.xml");
 const appBuildGradlePath = resolve(root, "android/app/build.gradle");
 const mainActivitySource = resolve(root, "native/android/MainActivity.java");
@@ -12,6 +11,7 @@ const sharePluginSource = resolve(root, "native/android/ShareReceiverPlugin.java
 const capturePluginSource = resolve(root, "native/android/ScreenCapturePlugin.java");
 const captureServiceSource = resolve(root, "native/android/ScreenCaptureService.java");
 const updaterPluginSource = resolve(root, "native/android/NativeUpdaterPlugin.java");
+const installReceiverSource = resolve(root, "native/android/NativeInstallReceiver.java");
 const iconSource = resolve(root, "public/icons/icon-512.png");
 const roundIconSource = resolve(root, "public/icons/maskable-512.png");
 const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
@@ -24,20 +24,14 @@ if (!versionName || !Number.isInteger(versionCode) || versionCode <= 0) {
 
 await mkdir(javaDir, { recursive: true });
 await mkdir(drawableDir, { recursive: true });
-await mkdir(xmlDir, { recursive: true });
 await copyFile(mainActivitySource, resolve(javaDir, "MainActivity.java"));
 await copyFile(sharePluginSource, resolve(javaDir, "ShareReceiverPlugin.java"));
 await copyFile(capturePluginSource, resolve(javaDir, "ScreenCapturePlugin.java"));
 await copyFile(captureServiceSource, resolve(javaDir, "ScreenCaptureService.java"));
 await copyFile(updaterPluginSource, resolve(javaDir, "NativeUpdaterPlugin.java"));
+await copyFile(installReceiverSource, resolve(javaDir, "NativeInstallReceiver.java"));
 await copyFile(iconSource, resolve(drawableDir, "water_sort_icon.png"));
 await copyFile(roundIconSource, resolve(drawableDir, "water_sort_icon_round.png"));
-
-await writeFile(resolve(xmlDir, "water_sort_file_paths.xml"), `<?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <cache-path name="updates" path="updates/" />
-</paths>
-`);
 
 let manifest = await readFile(manifestPath, "utf8");
 const ensurePermission = (name) => {
@@ -51,24 +45,6 @@ ensurePermission("android.permission.INTERNET");
 ensurePermission("android.permission.REQUEST_INSTALL_PACKAGES");
 ensurePermission("android.permission.FOREGROUND_SERVICE");
 ensurePermission("android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION");
-
-// Android 11+ package visibility can otherwise hide the system installer from
-// queryIntentActivities(), which prevents us from granting its package an
-// explicit temporary FileProvider read permission on OEM ROMs such as MIUI.
-if (!manifest.includes("android.intent.action.INSTALL_PACKAGE")) {
-  const installerQueries = `
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.INSTALL_PACKAGE" />
-            <data android:mimeType="application/vnd.android.package-archive" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:mimeType="application/vnd.android.package-archive" />
-        </intent>
-    </queries>`;
-  manifest = manifest.replace("<application", `${installerQueries}\n\n    <application`);
-}
 
 const shareAction = "android.intent.action.SEND";
 if (!manifest.includes(shareAction)) {
@@ -95,18 +71,12 @@ if (!manifest.includes('android:name=".ScreenCaptureService"')) {
   manifest = manifest.replace("</application>", `${captureService}\n    </application>`);
 }
 
-const updateProvider = `
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="\${applicationId}.files"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/water_sort_file_paths" />
-        </provider>`;
-if (!manifest.includes('android:resource="@xml/water_sort_file_paths"')) {
-  manifest = manifest.replace("</application>", `${updateProvider}\n    </application>`);
+const installReceiver = `
+        <receiver
+            android:name=".NativeInstallReceiver"
+            android:exported="false" />`;
+if (!manifest.includes('android:name=".NativeInstallReceiver"')) {
+  manifest = manifest.replace("</application>", `${installReceiver}\n    </application>`);
 }
 
 manifest = manifest
@@ -121,4 +91,4 @@ appBuildGradle = appBuildGradle
   .replace(/versionName\s+"[^"]+"/, `versionName "${versionName}"`);
 await writeFile(appBuildGradlePath, appBuildGradle);
 
-console.log(`Prepared Capacitor Android shell: split-screen capture, APK updater, ACTION_SEND, version ${versionName} (${versionCode}).`);
+console.log(`Prepared Capacitor Android shell: split-screen capture, PackageInstaller updater, ACTION_SEND, version ${versionName} (${versionCode}).`);
