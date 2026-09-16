@@ -38,6 +38,7 @@ describe("v0.7 Android native contract", () => {
     expect(mainActivity).toContain("registerPlugin(ScreenCapturePlugin.class)");
     expect(capturePlugin).toContain("createScreenCaptureIntent");
     expect(capturePlugin).toContain("captureOtherPane");
+    expect(capturePlugin).toContain("static android.app.Activity.RESULT_OK");
     expect(captureService).toContain("FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION");
     expect(captureService).toContain("computeOtherPane");
     expect(captureService).toContain("Bitmap.createBitmap(full, crop.left, crop.top");
@@ -81,6 +82,9 @@ describe("v0.7 Android native contract", () => {
   it("builds and publishes a stable rolling APK URL in GitHub Actions", () => {
     expect(workflow).toContain("npx cap add android");
     expect(workflow).toContain("sdkmanager \"platforms;android-36\"");
+    expect(workflow).toContain("mkdir -p ~/.android");
+    expect(workflow).toContain("water-sort-solver-debug-keystore-v2");
+    expect(workflow).toContain("keytool -genkeypair");
     expect(workflow).toContain("./gradlew assembleDebug");
     expect(workflow).toContain("Water-Sort-Solver.apk");
     expect(workflow).toContain("gh release create android-latest");
