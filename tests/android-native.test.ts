@@ -132,13 +132,31 @@ describe("v0.9.5 Android native contract", () => {
 
   it("publishes discoverable metadata only after release APK verification", () => {
     expect(workflow).toContain("Publish versioned GitHub Android release");
-    expect(workflow).toContain("Verified GitHub release");
+    expect(workflow).toContain("Verified immutable GitHub release");
     expect(workflow).toContain("Publish verified GitHub discovery release");
     expect(workflow.indexOf("Publish versioned GitHub Android release")).toBeLessThan(workflow.indexOf("Publish verified GitHub discovery release"));
-    expect(workflow.indexOf("Publish verified GitHub discovery release")).toBeLessThan(workflow.indexOf("Publish China update mirror to Gitee OpenAPI"));
-    expect(publishGiteeScript).toContain("verifyPublicApk");
-    expect(publishGiteeScript).toContain("await verifyPublicApk();");
-    expect(publishGiteeScript.indexOf("await verifyPublicApk();")).toBeLessThan(publishGiteeScript.lastIndexOf('await writeFile("latest.json", manifestText, branch)'));
+    expect(workflow.indexOf("Publish verified GitHub discovery release")).toBeLessThan(workflow.indexOf("Publish China update discovery and optional Gitee mirror"));
+    expect(publishGiteeScript).toContain("verifyRemoteApk(githubSource.url");
+    expect(publishGiteeScript).toContain('await writeFile("latest.json", discoveryManifestText, branch)');
+  });
+
+  it("treats versioned GitHub releases as immutable canonical artifacts", () => {
+    expect(workflow).toContain("Reuse immutable versioned release when it already exists");
+    expect(workflow).toContain('gh release view "$TAG"');
+    expect(workflow).toContain('gh release download "$TAG"');
+    expect(workflow).toContain("preserving immutable assets");
+    expect(workflow).not.toContain('gh release delete "$TAG" --cleanup-tag -y');
+    expect(workflow).toContain("cp canonical-release/Water-Sort-Solver.apk Water-Sort-Solver.apk");
+    expect(workflow).toContain("cp canonical-release/latest.json latest.json");
+  });
+
+  it("degrades Gitee discovery to the verified GitHub source when mirror upload fails", () => {
+    expect(workflow).toContain("continue-on-error: true");
+    expect(workflow).toContain("Publish China update discovery and optional Gitee mirror");
+    expect(publishGiteeScript).toContain("buildDiscoveryManifest");
+    expect(publishGiteeScript).toContain("apkSources: [githubSource]");
+    expect(publishGiteeScript).toContain("Gitee APK mirror unavailable");
+    expect(publishGiteeScript).toContain("Published degraded Gitee discovery manifest backed by verified GitHub versioned APK");
   });
 
   it("builds one APK and publishes the same bytes to GitHub and Gitee", () => {
