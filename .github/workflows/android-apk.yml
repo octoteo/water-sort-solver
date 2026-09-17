@@ -106,6 +106,39 @@ jobs:
       - name: Generate signed update metadata
         run: node scripts/generate-update-manifest.mjs Water-Sort-Solver.apk latest.json
 
+      - name: Reuse immutable versioned release when it already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          VERSION=$(node -p "require('./package.json').version")
+          VERSION_CODE=$(node -p "require('./package.json').androidVersionCode")
+          TAG="v${VERSION}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            rm -rf canonical-release
+            mkdir canonical-release
+            gh release download "$TAG" \
+              -p Water-Sort-Solver.apk \
+              -p latest.json \
+              -D canonical-release
+
+            RELEASE_SHA=$(sha256sum canonical-release/Water-Sort-Solver.apk | awk '{print $1}')
+            MANIFEST_SHA=$(node -p "require('./canonical-release/latest.json').sha256")
+            MANIFEST_VERSION=$(node -p "require('./canonical-release/latest.json').versionName")
+            MANIFEST_CODE=$(node -p "require('./canonical-release/latest.json').versionCode")
+
+            test "$RELEASE_SHA" = "$MANIFEST_SHA"
+            test "$MANIFEST_VERSION" = "$VERSION"
+            test "$MANIFEST_CODE" = "$VERSION_CODE"
+
+            cp canonical-release/Water-Sort-Solver.apk Water-Sort-Solver.apk
+            cp canonical-release/latest.json latest.json
+            echo "Reused immutable GitHub release ${TAG}, sha256=${RELEASE_SHA}"
+          else
+            echo "No existing ${TAG}; this build becomes the canonical release artifact."
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -125,18 +158,21 @@ jobs:
           TAG="v${VERSION}"
           EXPECTED_SHA=$(node -p "require('./latest.json').sha256")
 
-          gh release delete "$TAG" --cleanup-tag -y || true
-          gh release create "$TAG" Water-Sort-Solver.apk latest.json \
-            --target "$GITHUB_SHA" \
-            --title "Water Sort Solver Android v${VERSION}" \
-            --notes "Android release v${VERSION}. APK bytes are shared with the Gitee mirror and verified against the generated SHA-256." \
-            --latest
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Versioned release ${TAG} already exists; preserving immutable assets."
+          else
+            gh release create "$TAG" Water-Sort-Solver.apk latest.json \
+              --target "$GITHUB_SHA" \
+              --title "Water Sort Solver Android v${VERSION}" \
+              --notes "Android release v${VERSION}. This versioned APK is immutable and is the canonical source for all mirrors." \
+              --latest
+          fi
 
           rm -f github-apk.bin
           gh release download "$TAG" -p Water-Sort-Solver.apk -O github-apk.bin
           ACTUAL_SHA=$(sha256sum github-apk.bin | awk '{print $1}')
           test "$ACTUAL_SHA" = "$EXPECTED_SHA"
-          echo "Verified GitHub release ${TAG}, sha256=${ACTUAL_SHA}"
+          echo "Verified immutable GitHub release ${TAG}, sha256=${ACTUAL_SHA}"
 
       - name: Publish verified GitHub discovery release
         env:
@@ -145,16 +181,36 @@ jobs:
           set -eu
           VERSION=$(node -p "require('./package.json').version")
           EXPECTED_SHA=$(node -p "require('./latest.json').sha256")
+          EXPECTED_MANIFEST_SHA=$(sha256sum latest.json | awk '{print $1}')
+          REFRESH=1
 
-          # Keep this stable tag for older installed builds. It is published only
-          # after the immutable/versioned release above has been downloaded and
-          # verified, so it can never advertise bytes that do not yet exist.
-          gh release delete android-latest --cleanup-tag -y || true
-          gh release create android-latest Water-Sort-Solver.apk latest.json \
-            --target "$GITHUB_SHA" \
-            --title "Water Sort Solver Android v${VERSION}" \
-            --notes "Compatibility discovery release for installed Android builds. The manifest points to the verified versioned release." \
-            --latest
+          if gh release view android-latest >/dev/null 2>&1; then
+            rm -rf rolling-current
+            mkdir rolling-current
+            if gh release download android-latest \
+              -p Water-Sort-Solver.apk \
+              -p latest.json \
+              -D rolling-current; then
+              ROLLING_SHA=$(sha256sum rolling-current/Water-Sort-Solver.apk | awk '{print $1}')
+              ROLLING_MANIFEST_SHA=$(sha256sum rolling-current/latest.json | awk '{print $1}')
+              if [ "$ROLLING_SHA" = "$EXPECTED_SHA" ] && [ "$ROLLING_MANIFEST_SHA" = "$EXPECTED_MANIFEST_SHA" ]; then
+                REFRESH=0
+                echo "android-latest already matches canonical v${VERSION}; leaving it unchanged."
+              fi
+            fi
+          fi
+
+          if [ "$REFRESH" = "1" ]; then
+            if gh release view android-latest >/dev/null 2>&1; then
+              gh release upload android-latest Water-Sort-Solver.apk latest.json --clobber
+            else
+              gh release create android-latest Water-Sort-Solver.apk latest.json \
+                --target "$GITHUB_SHA" \
+                --title "Water Sort Solver Android v${VERSION}" \
+                --notes "Compatibility discovery release for installed Android builds. Assets are copied from the immutable versioned release." \
+                --latest
+            fi
+          fi
 
           rm -f github-rolling-apk.bin
           gh release download android-latest -p Water-Sort-Solver.apk -O github-rolling-apk.bin
@@ -162,9 +218,13 @@ jobs:
           test "$ROLLING_SHA" = "$EXPECTED_SHA"
           echo "Verified GitHub discovery release android-latest, sha256=${ROLLING_SHA}"
 
-      - name: Publish China update mirror to Gitee OpenAPI
+      - name: Publish China update discovery and optional Gitee mirror
+        continue-on-error: true
+        timeout-minutes: 5
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: node scripts/publish-gitee-release.mjs
 
-# Gitee OpenAPI is used because git smart-HTTP push from GitHub-hosted runners can time out.
+# Gitee release attachment uploads from GitHub-hosted runners can time out with
+# zero response bytes. GitHub versioned releases are canonical; Gitee is a
+# best-effort mirror and discovery endpoint for older China-first clients.
